@@ -1,5 +1,5 @@
 import { addMonths, format, getDay, getDaysInMonth, startOfMonth, subMonths } from 'date-fns';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Modal,
@@ -55,13 +55,51 @@ function parseTimeToHour(time?: string): number {
 }
 
 function TimelineView({ events }: { events: SportEvent[] }) {
+  const scrollRef = useRef<ScrollView>(null);
+  const [containerWidth, setContainerWidth] = useState(300);
   const totalHours = END_HOUR - START_HOUR;
   const timelineHeight = totalHours * HOUR_HEIGHT;
   const hours = Array.from({ length: totalHours + 1 }, (_, i) => START_HOUR + i);
 
+  const firstEventHour = events.length > 0
+    ? Math.min(...events.map(e => parseTimeToHour(e.time)))
+    : 12;
+  const scrollTo = Math.max((firstEventHour - START_HOUR - 1) * HOUR_HEIGHT, 0);
+
+  const EVENT_DURATION = 2;
+  const positioned = (() => {
+    const cols: { event: SportEvent; col: number; totalCols: number }[] = [];
+    const columns: number[] = [];
+
+    for (const event of [...events].sort((a, b) =>
+      parseTimeToHour(a.time) - parseTimeToHour(b.time)
+    )) {
+      const startHour = parseTimeToHour(event.time);
+      const endHour = startHour + EVENT_DURATION;
+      let col = columns.findIndex((colEnd) => colEnd <= startHour);
+      if (col === -1) col = columns.length;
+      columns[col] = endHour;
+      cols.push({ event, col, totalCols: 0 });
+    }
+
+    const totalCols = columns.length;
+    return cols.map((item) => ({ ...item, totalCols }));
+  })();
+
+  const LEFT_OFFSET = 48;
+  const RIGHT_MARGIN = 4;
+
   return (
-    <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
-      <View style={{ height: timelineHeight, position: 'relative' }}>
+    <ScrollView
+      ref={scrollRef}
+      style={{ maxHeight: 420 }}
+      showsVerticalScrollIndicator={false}
+      onLayout={() => scrollRef.current?.scrollTo({ y: scrollTo, animated: false })}
+    >
+      <View
+        style={{ height: timelineHeight, position: 'relative' }}
+        onLayout={(e) => setContainerWidth(e.nativeEvent.layout.width)}
+      >
         {hours.map((hour) => (
           <View
             key={hour}
@@ -81,16 +119,22 @@ function TimelineView({ events }: { events: SportEvent[] }) {
           </View>
         ))}
 
-        {events.map((e) => {
+        {positioned.map(({ event: e, col, totalCols }) => {
           const startHour = parseTimeToHour(e.time);
           const clampedHour = Math.min(Math.max(startHour, START_HOUR), END_HOUR - 1);
           const top = (clampedHour - START_HOUR) * HOUR_HEIGHT;
           const color = SPORT_COLORS[e.sport] ?? '#888';
+          const availableWidth = containerWidth - LEFT_OFFSET - RIGHT_MARGIN;
+          const colWidth = (availableWidth - (totalCols - 1) * 2) / totalCols;
+          const colLeft = LEFT_OFFSET + col * (colWidth + 2);
+
           return (
             <View
               key={e.id}
               style={[tlStyles.eventBlock, {
                 top,
+                left: colLeft,
+                width: colWidth,
                 backgroundColor: color + '18',
                 borderLeftColor: color,
               }]}
@@ -98,7 +142,7 @@ function TimelineView({ events }: { events: SportEvent[] }) {
               <Text style={[tlStyles.eventSport, { color }]}>{SPORT_LABELS[e.sport]}</Text>
               <Text style={tlStyles.eventName} numberOfLines={2}>{e.name}</Text>
               {(e.time || e.channel) && (
-                <Text style={tlStyles.eventMeta}>
+                <Text style={tlStyles.eventMeta} numberOfLines={1}>
                   {[e.time, e.channel].filter(Boolean).join(' · ')}
                 </Text>
               )}
@@ -142,7 +186,7 @@ export default function CalendarScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <ScrollView>
+      <ScrollView scrollEnabled={!selectedDate}>
         <View style={styles.header}>
           <TouchableOpacity onPress={() => setCurrent(subMonths(current, 1))}>
             <Text style={styles.navBtn}>‹</Text>
@@ -196,25 +240,25 @@ export default function CalendarScreen() {
             );
           })}
         </View>
-
-        {selectedDate && (
-          <View style={styles.dayDetail}>
-            <View style={styles.dayDetailHeader}>
-              <Text style={styles.dayDetailTitle}>
-                {format(new Date(selectedDate + 'T00:00:00'), 'EEEE, MMMM d')}
-              </Text>
-              <TouchableOpacity style={styles.addEventBtn} onPress={() => setShowAddModal(true)}>
-                <Text style={styles.addEventBtnText}>+ Add</Text>
-              </TouchableOpacity>
-            </View>
-            {(eventsByDate[selectedDate] ?? []).length === 0 ? (
-              <Text style={styles.noEvents}>No games scheduled</Text>
-            ) : (
-              <TimelineView events={eventsByDate[selectedDate] ?? []} />
-            )}
-          </View>
-        )}
       </ScrollView>
+
+      {selectedDate && (
+        <View style={styles.dayDetail}>
+          <View style={styles.dayDetailHeader}>
+            <Text style={styles.dayDetailTitle}>
+              {format(new Date(selectedDate + 'T00:00:00'), 'EEEE, MMMM d')}
+            </Text>
+            <TouchableOpacity style={styles.addEventBtn} onPress={() => setShowAddModal(true)}>
+              <Text style={styles.addEventBtnText}>+ Add</Text>
+            </TouchableOpacity>
+          </View>
+          {(eventsByDate[selectedDate] ?? []).length === 0 ? (
+            <Text style={styles.noEvents}>No games scheduled</Text>
+          ) : (
+            <TimelineView events={eventsByDate[selectedDate] ?? []} />
+          )}
+        </View>
+      )}
 
       <Modal visible={showAddModal} transparent animationType="slide">
         <View style={styles.modalBackdrop}>
@@ -256,13 +300,10 @@ const tlStyles = StyleSheet.create({
   hourLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: '#eee', marginLeft: 8 },
   eventBlock: {
     position: 'absolute',
-    left: 48,
-    right: 4,
     minHeight: 48,
     borderLeftWidth: 3,
     borderRadius: 6,
     padding: 8,
-    marginBottom: 2,
   },
   eventSport: { fontSize: 10, fontWeight: '700', marginBottom: 2 },
   eventName: { fontSize: 13, fontWeight: '500', color: '#111' },
@@ -287,7 +328,7 @@ const styles = StyleSheet.create({
   pill: { borderRadius: 3, paddingHorizontal: 4, paddingVertical: 1, marginBottom: 2 },
   pillText: { fontSize: 9, color: '#fff' },
   moreText: { fontSize: 9, color: '#999' },
-  dayDetail: { margin: 16, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, borderColor: '#eee', padding: 16 },
+  dayDetail: { flex: 1, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#eee', padding: 16 },
   dayDetailHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   dayDetailTitle: { fontSize: 16, fontWeight: '600' },
   addEventBtn: { backgroundColor: '#378ADD', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
