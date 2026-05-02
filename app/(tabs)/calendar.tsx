@@ -1,37 +1,114 @@
 import { addMonths, format, getDay, getDaysInMonth, startOfMonth, subMonths } from 'date-fns';
 import { useState } from 'react';
 import {
-    ActivityIndicator,
-    Modal,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useGames } from '../../hooks/useGames';
-import { Sport, useAppStore } from '../../lib/store';
+import { Sport, SportEvent, useAppStore } from '../../lib/store';
 
 const SPORT_COLORS: Record<Sport, string> = {
-  nfl:    '#1D3D7B', // navy blue
-  nba:    '#C35B10', // orange
-  mlb:    '#0D5A2A', // green
-  nhl:    '#5A1A6B', // purple
-  soccer: '#2A5A1A', // dark green
-  wnba:   '#E4603A', // coral orange
-  ncaafb: '#8B2000', // maroon
-  ncaamb: '#005EB8', // bright blue
-  golf:   '#2D6A2D', // fairway green
-  tennis: '#C8A800', // clay yellow
-  f1:     '#E10600', // ferrari red
-  nascar: '#FFB700', // checkered gold
-  mma:    '#B22222', // fight red
-  boxing: '#8B0000', // dark red
+  nfl:    '#1D3D7B',
+  nba:    '#C35B10',
+  mlb:    '#0D5A2A',
+  nhl:    '#5A1A6B',
+  soccer: '#2A5A1A',
+  wnba:   '#E4603A',
+  ncaafb: '#8B2000',
+  ncaamb: '#005EB8',
+  golf:   '#2D6A2D',
+  tennis: '#C8A800',
+  f1:     '#E10600',
+  nascar: '#FFB700',
+  mma:    '#B22222',
+  boxing: '#8B0000',
+};
+
+const SPORT_LABELS: Record<Sport, string> = {
+  nfl: 'NFL', nba: 'NBA', mlb: 'MLB', nhl: 'NHL', soccer: 'Soccer',
+  wnba: 'WNBA', ncaafb: 'CFB', ncaamb: 'CBB',
+  golf: 'Golf', tennis: 'Tennis', f1: 'F1', nascar: 'NASCAR', mma: 'MMA', boxing: 'Boxing',
 };
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const HOUR_HEIGHT = 56;
+const START_HOUR = 8;
+const END_HOUR = 24;
+
+function parseTimeToHour(time?: string): number {
+  if (!time) return 12;
+  const match = time.match(/(\d+):(\d+)\s*(AM|PM)/i);
+  if (!match) return 12;
+  let hour = parseInt(match[1]);
+  const minutes = parseInt(match[2]);
+  const isPM = match[3].toUpperCase() === 'PM';
+  if (isPM && hour !== 12) hour += 12;
+  if (!isPM && hour === 12) hour = 0;
+  return hour + minutes / 60;
+}
+
+function TimelineView({ events }: { events: SportEvent[] }) {
+  const totalHours = END_HOUR - START_HOUR;
+  const timelineHeight = totalHours * HOUR_HEIGHT;
+  const hours = Array.from({ length: totalHours + 1 }, (_, i) => START_HOUR + i);
+
+  return (
+    <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
+      <View style={{ height: timelineHeight, position: 'relative' }}>
+        {hours.map((hour) => (
+          <View
+            key={hour}
+            style={{
+              position: 'absolute',
+              top: (hour - START_HOUR) * HOUR_HEIGHT,
+              left: 0,
+              right: 0,
+              flexDirection: 'row',
+              alignItems: 'flex-start',
+            }}
+          >
+            <Text style={tlStyles.hourLabel}>
+              {hour === 0 ? '12a' : hour < 12 ? `${hour}a` : hour === 12 ? '12p' : `${hour - 12}p`}
+            </Text>
+            <View style={tlStyles.hourLine} />
+          </View>
+        ))}
+
+        {events.map((e) => {
+          const startHour = parseTimeToHour(e.time);
+          const clampedHour = Math.min(Math.max(startHour, START_HOUR), END_HOUR - 1);
+          const top = (clampedHour - START_HOUR) * HOUR_HEIGHT;
+          const color = SPORT_COLORS[e.sport] ?? '#888';
+          return (
+            <View
+              key={e.id}
+              style={[tlStyles.eventBlock, {
+                top,
+                backgroundColor: color + '18',
+                borderLeftColor: color,
+              }]}
+            >
+              <Text style={[tlStyles.eventSport, { color }]}>{SPORT_LABELS[e.sport]}</Text>
+              <Text style={tlStyles.eventName} numberOfLines={2}>{e.name}</Text>
+              {(e.time || e.channel) && (
+                <Text style={tlStyles.eventMeta}>
+                  {[e.time, e.channel].filter(Boolean).join(' · ')}
+                </Text>
+              )}
+            </View>
+          );
+        })}
+      </View>
+    </ScrollView>
+  );
+}
 
 export default function CalendarScreen() {
   const [current, setCurrent] = useState(new Date());
@@ -114,7 +191,7 @@ export default function CalendarScreen() {
                     <Text style={styles.pillText} numberOfLines={1}>{e.name}</Text>
                   </View>
                 ))}
-                {events.length > 2 && <Text style={styles.moreText}>+{events.length - 2} more</Text>}
+                {events.length > 2 && <Text style={styles.moreText}>+{events.length - 2}</Text>}
               </TouchableOpacity>
             );
           })}
@@ -133,18 +210,7 @@ export default function CalendarScreen() {
             {(eventsByDate[selectedDate] ?? []).length === 0 ? (
               <Text style={styles.noEvents}>No games scheduled</Text>
             ) : (
-              (eventsByDate[selectedDate] ?? []).map((e) => (
-                <View key={e.id} style={styles.eventRow}>
-                  <View style={[styles.eventDot, { backgroundColor: SPORT_COLORS[e.sport] }]} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.eventName}>{e.name}</Text>
-                    {(e.time || e.channel) && (
-                      <Text style={styles.eventMeta}>{[e.time, e.channel].filter(Boolean).join(' · ')}</Text>
-                    )}
-                  </View>
-                  <Text style={styles.sportTag}>{e.sport.toUpperCase()}</Text>
-                </View>
-              ))
+              <TimelineView events={eventsByDate[selectedDate] ?? []} />
             )}
           </View>
         )}
@@ -158,13 +224,15 @@ export default function CalendarScreen() {
             <TextInput style={styles.input} placeholder="Time (e.g. 7:30 PM ET)" value={newEvent.time} onChangeText={(v) => setNewEvent((s) => ({ ...s, time: v }))} />
             <TextInput style={styles.input} placeholder="Channel / venue (optional)" value={newEvent.note} onChangeText={(v) => setNewEvent((s) => ({ ...s, note: v }))} />
             <View style={styles.sportPicker}>
-              {(['nfl', 'nba', 'mlb', 'nhl', 'soccer'] as Sport[]).map((s) => (
+              {(Object.keys(SPORT_COLORS) as Sport[]).map((s) => (
                 <TouchableOpacity
                   key={s}
                   style={[styles.sportChip, newEvent.sport === s && { backgroundColor: SPORT_COLORS[s] }]}
                   onPress={() => setNewEvent((st) => ({ ...st, sport: s }))}
                 >
-                  <Text style={[styles.sportChipText, newEvent.sport === s && { color: '#fff' }]}>{s.toUpperCase()}</Text>
+                  <Text style={[styles.sportChipText, newEvent.sport === s && { color: '#fff' }]}>
+                    {SPORT_LABELS[s]}
+                  </Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -182,6 +250,24 @@ export default function CalendarScreen() {
     </SafeAreaView>
   );
 }
+
+const tlStyles = StyleSheet.create({
+  hourLabel: { width: 36, fontSize: 10, color: '#bbb', fontWeight: '500', textAlign: 'right', marginTop: -6 },
+  hourLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: '#eee', marginLeft: 8 },
+  eventBlock: {
+    position: 'absolute',
+    left: 48,
+    right: 4,
+    minHeight: 48,
+    borderLeftWidth: 3,
+    borderRadius: 6,
+    padding: 8,
+    marginBottom: 2,
+  },
+  eventSport: { fontSize: 10, fontWeight: '700', marginBottom: 2 },
+  eventName: { fontSize: 13, fontWeight: '500', color: '#111' },
+  eventMeta: { fontSize: 11, color: '#777', marginTop: 2 },
+});
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#fff' },
@@ -207,11 +293,6 @@ const styles = StyleSheet.create({
   addEventBtn: { backgroundColor: '#378ADD', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
   addEventBtnText: { color: '#fff', fontSize: 13, fontWeight: '600' },
   noEvents: { color: '#bbb', fontSize: 14, textAlign: 'center', paddingVertical: 16 },
-  eventRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#f0f0f0' },
-  eventDot: { width: 10, height: 10, borderRadius: 5 },
-  eventName: { fontSize: 14, fontWeight: '500', color: '#111' },
-  eventMeta: { fontSize: 12, color: '#888', marginTop: 2 },
-  sportTag: { fontSize: 10, color: '#bbb', fontWeight: '600' },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
   modal: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24, paddingBottom: 40 },
   modalTitle: { fontSize: 18, fontWeight: '600', marginBottom: 16 },
