@@ -15,11 +15,20 @@ import { useGames } from '../../hooks/useGames';
 import { Sport, useAppStore } from '../../lib/store';
 
 const SPORT_COLORS: Record<Sport, string> = {
-  nfl: '#1D3D7B',
-  nba: '#C35B10',
-  mlb: '#0D5A2A',
-  nhl: '#5A1A6B',
-  soccer: '#2A5A1A',
+  nfl:    '#1D3D7B', // navy blue
+  nba:    '#C35B10', // orange
+  mlb:    '#0D5A2A', // green
+  nhl:    '#5A1A6B', // purple
+  soccer: '#2A5A1A', // dark green
+  wnba:   '#E4603A', // coral orange
+  ncaafb: '#8B2000', // maroon
+  ncaamb: '#005EB8', // bright blue
+  golf:   '#2D6A2D', // fairway green
+  tennis: '#C8A800', // clay yellow
+  f1:     '#E10600', // ferrari red
+  nascar: '#FFB700', // checkered gold
+  mma:    '#B22222', // fight red
+  boxing: '#8B0000', // dark red
 };
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
