@@ -25,7 +25,7 @@ export interface SportSetting {
   sport: Sport;
   // Team sports
   teamFilter?: TeamSportFilter;
-  favoriteTeam?: Team[];
+  favoriteTeams?: Team[];
   // Tournament sports
   tournamentFilter?: TournamentSportFilter;
   selectedTournaments?: Tournament[];
