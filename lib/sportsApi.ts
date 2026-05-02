@@ -25,8 +25,13 @@ const GOLF_MAJORS = [
   'masters', 'u.s. open', 'us open', 'the open', 'british open', 'pga championship'
 ];
 
-function isMajorTournament(name: string): boolean {
+const TENNIS_MAJORS = [
+  'australian open', 'french open', 'roland garros', 'wimbledon', 'us open'
+];
+
+function isMajorTournament(name: string, sport: Sport): boolean {
   const lower = name.toLowerCase();
+  if (sport === 'tennis') return TENNIS_MAJORS.some((m) => lower.includes(m));
   return GOLF_MAJORS.some((m) => lower.includes(m));
 }
 
@@ -43,9 +48,8 @@ function normalizeEvent(raw: any, sport: Sport): SportEvent[] {
   const isNationalTv = (competition?.broadcasts ?? []).length > 0;
   const venue = competition?.venue?.fullName;
 
-  // For golf, expand the single event across Thu–Sun (4 days)
   if (sport === 'golf') {
-    const isMajor = isMajorTournament(name);
+    const isMajor = isMajorTournament(name, sport);
     const startDate = parseISO(dateStr);
     return [0, 1, 2, 3].map((offset) => ({
       id: `golf-espn-${raw.id}-day${offset + 1}`,
@@ -53,6 +57,23 @@ function normalizeEvent(raw: any, sport: Sport): SportEvent[] {
       sport,
       date: format(addDays(startDate, offset), 'yyyy-MM-dd'),
       time: offset === 0 && raw.date ? format(new Date(raw.date), 'h:mm a') : undefined,
+      venue,
+      channel,
+      isNationalTv,
+      isMajor,
+    }));
+  }
+
+  if (sport === 'tennis') {
+    const isMajor = isMajorTournament(name, sport);
+    const startDate = parseISO(dateStr);
+    const duration = isMajor ? 14 : 7;
+    return Array.from({ length: duration }, (_, offset) => ({
+      id: `tennis-espn-${raw.id}-day${offset + 1}`,
+      name: `${name} — Day ${offset + 1}`,
+      sport,
+      date: format(addDays(startDate, offset), 'yyyy-MM-dd'),
+      time: undefined,
       venue,
       channel,
       isNationalTv,

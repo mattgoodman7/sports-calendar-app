@@ -1,18 +1,18 @@
 import { useQuery } from '@tanstack/react-query';
-import { fetchGamesForSports } from './lib/sportsApi';
-import { SportEvent, useAppStore } from './lib/store';
+import { fetchGamesForSports } from '../lib/sportsApi';
+import { SportEvent, useAppStore } from '../lib/store';
 
 function applyFilters(events: SportEvent[], sportSettings: Record<string, any>): SportEvent[] {
   return events.filter((event) => {
     const setting = sportSettings[event.sport];
     if (!setting) return true;
 
-    // Golf — filter by majors
-    if (event.sport === 'golf') {
-      const filter = setting.tournamentFilter;
-      if (filter === 'majors') return event.isMajor === true;
-      return true; // 'all' shows everything
-    }
+// Golf/Tennis — filter by majors
+      if (event.sport === 'golf' || event.sport === 'tennis') {
+        const filter = setting.tournamentFilter;
+        if (filter === 'majors') return event.isMajor === true;
+        return true;
+      }
 
     // Team sports — filter by team/national TV
     const filter = setting.teamFilter;
