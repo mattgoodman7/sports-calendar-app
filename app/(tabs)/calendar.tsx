@@ -107,7 +107,20 @@ export default function CalendarScreen() {
                 onPress={() => setSelectedDate(isSelected ? null : dateStr)}
               >
                 <View style={[styles.dayNum, isToday && styles.dayNumToday]}>
-                {selectedDate && (
+                  <Text style={[styles.dayNumText, isToday && { color: '#fff' }]}>{day}</Text>
+                </View>
+                {events.slice(0, 2).map((e) => (
+                  <View key={e.id} style={[styles.pill, { backgroundColor: SPORT_COLORS[e.sport] }]}>
+                    <Text style={styles.pillText} numberOfLines={1}>{e.name}</Text>
+                  </View>
+                ))}
+                {events.length > 2 && <Text style={styles.moreText}>+{events.length - 2} more</Text>}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {selectedDate && (
           <View style={styles.dayDetail}>
             <View style={styles.dayDetailHeader}>
               <Text style={styles.dayDetailTitle}>
@@ -120,10 +133,6 @@ export default function CalendarScreen() {
             {(eventsByDate[selectedDate] ?? []).length === 0 ? (
               <Text style={styles.noEvents}>No games scheduled</Text>
             ) : (
-              <TimelineView events={eventsByDate[selectedDate] ?? []} />
-            )}
-          </View>
-        )}
               (eventsByDate[selectedDate] ?? []).map((e) => (
                 <View key={e.id} style={styles.eventRow}>
                   <View style={[styles.eventDot, { backgroundColor: SPORT_COLORS[e.sport] }]} />
