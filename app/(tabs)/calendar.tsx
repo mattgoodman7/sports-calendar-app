@@ -11,7 +11,7 @@ import {
     View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useGames } from '../../useGames';
+import { useGames } from '../../hooks/useGames';
 import { Sport, useAppStore } from '../../lib/store';
 
 const SPORT_COLORS: Record<Sport, string> = {

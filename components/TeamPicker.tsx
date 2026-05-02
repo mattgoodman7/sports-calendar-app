@@ -12,14 +12,15 @@ import {
 } from 'react-native';
 import { Sport, Team } from '../lib/store';
 
-const LEAGUE_NAMES: Record<string, string> = {
-  nfl: 'NFL',
-  nba: 'NBA',
-  mlb: 'MLB',
-  nhl: 'NHL',
-  soccer: 'Major League Soccer',
-  wnba: 'WNBA',
-  // ncaafb and ncaamb require paid tier
+const ESPN_PATHS: Partial<Record<Sport, string>> = {
+  nfl:    'football/nfl',
+  nba:    'basketball/nba',
+  mlb:    'baseball/mlb',
+  nhl:    'hockey/nhl',
+  soccer: 'soccer/usa.1',
+  wnba:   'basketball/wnba',
+  ncaafb: 'football/college-football',
+  ncaamb: 'basketball/mens-college-basketball',
 };
 
 interface Props {
@@ -38,8 +39,8 @@ export default function TeamPicker({ sport, selectedTeams = [], onSelect }: Prop
   const [error, setError] = useState('');
 
   const fetchTeams = async () => {
-    const leagueName = LEAGUE_NAMES[sport];
-    if (!leagueName) {
+    const path = ESPN_PATHS[sport];
+    if (!path) {
       setError('Team selection not available for this sport yet.');
       return;
     }
@@ -47,15 +48,17 @@ export default function TeamPicker({ sport, selectedTeams = [], onSelect }: Prop
     setError('');
     try {
       const response = await axios.get(
-        `https://www.thesportsdb.com/api/v1/json/3/search_all_teams.php?l=${encodeURIComponent(leagueName)}`
+        `https://site.api.espn.com/apis/site/v2/sports/${path}/teams?limit=200`
       );
-      const raw = response.data?.teams ?? [];
-      const teamList: Team[] = raw.map((t: any) => ({
-        id: String(t.idTeam),
-        name: t.strTeam,
-        sport,
-      })).filter((t: Team) => t.name);
-      teamList.sort((a, b) => a.name.localeCompare(b.name));
+      const raw = response.data?.sports?.[0]?.leagues?.[0]?.teams ?? [];
+      const teamList: Team[] = raw
+        .map((entry: any) => ({
+          id: String(entry.team.id),
+          name: entry.team.displayName,
+          sport,
+        }))
+        .filter((t: Team) => t.name)
+        .sort((a: Team, b: Team) => a.name.localeCompare(b.name));
       setTeams(teamList);
       setFiltered(teamList);
     } catch (err) {

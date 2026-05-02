@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { endOfMonth, format, startOfMonth } from 'date-fns';
+import { addDays, endOfMonth, format, parseISO, startOfMonth } from 'date-fns';
 import { Sport, SportEvent } from './store';
 
 const BASE = 'https://site.api.espn.com/apis/site/v2/sports';
@@ -21,7 +21,16 @@ const ESPN_PATHS: Record<Sport, string> = {
   boxing: 'boxing/boxing',
 };
 
-function normalizeEvent(raw: any, sport: Sport): SportEvent {
+const GOLF_MAJORS = [
+  'masters', 'u.s. open', 'us open', 'the open', 'british open', 'pga championship'
+];
+
+function isMajorTournament(name: string): boolean {
+  const lower = name.toLowerCase();
+  return GOLF_MAJORS.some((m) => lower.includes(m));
+}
+
+function normalizeEvent(raw: any, sport: Sport): SportEvent[] {
   const competition = raw.competitions?.[0];
   const competitors = competition?.competitors ?? [];
   const home = competitors.find((c: any) => c.homeAway === 'home')?.team?.displayName ?? '';
@@ -30,8 +39,28 @@ function normalizeEvent(raw: any, sport: Sport): SportEvent {
   const name = home && away
     ? `${away} @ ${home}`
     : (raw.name ?? raw.shortName ?? 'Event');
+  const channel = competition?.broadcasts?.[0]?.names?.[0];
+  const isNationalTv = (competition?.broadcasts ?? []).length > 0;
+  const venue = competition?.venue?.fullName;
 
-  return {
+  // For golf, expand the single event across Thu–Sun (4 days)
+  if (sport === 'golf') {
+    const isMajor = isMajorTournament(name);
+    const startDate = parseISO(dateStr);
+    return [0, 1, 2, 3].map((offset) => ({
+      id: `golf-espn-${raw.id}-day${offset + 1}`,
+      name: `${name} — Round ${offset + 1}`,
+      sport,
+      date: format(addDays(startDate, offset), 'yyyy-MM-dd'),
+      time: offset === 0 && raw.date ? format(new Date(raw.date), 'h:mm a') : undefined,
+      venue,
+      channel,
+      isNationalTv,
+      isMajor,
+    }));
+  }
+
+  return [{
     id: `${sport}-espn-${raw.id}`,
     name,
     sport,
@@ -39,10 +68,11 @@ function normalizeEvent(raw: any, sport: Sport): SportEvent {
     time: raw.date ? format(new Date(raw.date), 'h:mm a') : undefined,
     homeTeam: home || undefined,
     awayTeam: away || undefined,
-    venue: competition?.venue?.fullName,
-    isNationalTv: (competition?.broadcasts ?? []).length > 0,
-    channel: competition?.broadcasts?.[0]?.names?.[0],
-  };
+    venue,
+    channel,
+    isNationalTv,
+    isMajor: false,
+  }];
 }
 
 export async function fetchGamesForMonth(
@@ -58,7 +88,7 @@ export async function fetchGamesForMonth(
     const response = await axios.get(`${BASE}/${path}/scoreboard`, {
       params: { dates: `${from}-${to}`, limit: 200 },
     });
-    return (response.data?.events ?? []).map((e: any) => normalizeEvent(e, sport));
+    return (response.data?.events ?? []).flatMap((e: any) => normalizeEvent(e, sport));
   } catch (err) {
     console.error(`Failed to fetch ${sport} games:`, err);
     return [];
