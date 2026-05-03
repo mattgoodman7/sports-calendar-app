@@ -42,12 +42,6 @@ function isMajorTournament(name: string, sport: Sport): boolean {
   return GOLF_MAJORS.some((m) => lower.includes(m));
 }
 
-/**
- * Extract logo URL from an ESPN team object.
- * Handles both formats:
- * - Direct string: team.logo = "https://..."
- * - Array: team.logos = [{ href: "https://...", rel: ["default"] }]
- */
 function getTeamLogo(team?: any): string | undefined {
   if (!team) return undefined;
   if (typeof team.logo === 'string' && team.logo) return team.logo;
@@ -60,15 +54,10 @@ function getTeamLogo(team?: any): string | undefined {
   return undefined;
 }
 
-/**
- * Extract logo URL from an ESPN league/event logos array.
- */
-function getEventLogo(logos?: any[]): string | undefined {
-  if (!logos || logos.length === 0) return undefined;
-  const preferred = logos.find((l: any) =>
-    l.rel?.includes('default') || l.rel?.includes('full')
-  );
-  return (preferred ?? logos[0])?.href;
+function getTournamentLogo(raw: any, sport: Sport): string | undefined {
+  if (sport === 'golf') return 'https://a.espncdn.com/redesign/assets/img/icons/ESPN-icon-golf.png';
+  if (sport === 'tennis') return 'https://a.espncdn.com/redesign/assets/img/icons/ESPN-icon-tennis.png';
+  return undefined;
 }
 
 function normalizeEvent(raw: any, sport: Sport): SportEvent[] {
@@ -78,7 +67,10 @@ function normalizeEvent(raw: any, sport: Sport): SportEvent[] {
   const awayComp = competitors.find((c: any) => c.homeAway === 'away');
   const home = homeComp?.team?.displayName ?? '';
   const away = awayComp?.team?.displayName ?? '';
+  const homeAbbrev = homeComp?.team?.abbreviation as string | undefined;
+  const awayAbbrev = awayComp?.team?.abbreviation as string | undefined;
   const dateStr = raw.date ? format(new Date(raw.date), 'yyyy-MM-dd') : '';
+  const utcDateStr = raw.date ? raw.date.slice(0, 10) : '';
   const name = home && away
     ? `${away} @ ${home}`
     : (raw.name ?? raw.shortName ?? 'Event');
@@ -86,16 +78,15 @@ function normalizeEvent(raw: any, sport: Sport): SportEvent[] {
   const isNationalTv = (competition?.broadcasts ?? []).length > 0;
   const venue = competition?.venue?.fullName;
 
-  // Extract logos
   const homeLogo = TEAM_SPORTS.includes(sport) ? getTeamLogo(homeComp?.team) : undefined;
   const awayLogo = TEAM_SPORTS.includes(sport) ? getTeamLogo(awayComp?.team) : undefined;
   const eventLogo = !TEAM_SPORTS.includes(sport)
-    ? getEventLogo(raw.leagues?.[0]?.logos)
+    ? getTournamentLogo(raw, sport)
     : undefined;
 
   if (sport === 'golf') {
     const isMajor = isMajorTournament(name, sport);
-    const startDate = parseISO(dateStr);
+    const startDate = parseISO(utcDateStr);
     return [0, 1, 2, 3].map((offset) => ({
       id: `golf-espn-${raw.id}-day${offset + 1}`,
       name: `${name} — Round ${offset + 1}`,
@@ -112,7 +103,7 @@ function normalizeEvent(raw: any, sport: Sport): SportEvent[] {
 
   if (sport === 'tennis') {
     const isMajor = isMajorTournament(name, sport);
-    const startDate = parseISO(dateStr);
+    const startDate = parseISO(utcDateStr);
     const duration = isMajor ? 14 : 7;
     return Array.from({ length: duration }, (_, offset) => ({
       id: `tennis-espn-${raw.id}-day${offset + 1}`,
@@ -136,6 +127,8 @@ function normalizeEvent(raw: any, sport: Sport): SportEvent[] {
     time: raw.date ? format(new Date(raw.date), 'h:mm a') : undefined,
     homeTeam: home || undefined,
     awayTeam: away || undefined,
+    homeAbbrev,
+    awayAbbrev,
     homeLogo,
     awayLogo,
     eventLogo,

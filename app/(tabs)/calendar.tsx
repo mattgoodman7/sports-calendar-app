@@ -2,6 +2,7 @@ import { addMonths, format, getDay, getDaysInMonth, startOfMonth, subMonths } fr
 import { useRef, useState } from 'react';
 import {
     ActivityIndicator,
+    Dimensions,
     Image,
     Modal,
     ScrollView,
@@ -51,6 +52,30 @@ const TOTAL_HOURS = 24;
 const TIME_COL_W  = 52;
 const EVENT_COL_W = 160;
 const LOGO_SIZE   = 20;
+
+// Calculate cell height to fill the screen
+// Reserve space for: safe area (~50px), header (~60px), day labels (~30px), padding (~20px)
+const SCREEN_HEIGHT  = Dimensions.get('window').height;
+const GRID_RESERVE   = 160;
+const MAX_WEEKS      = 6;
+const CELL_HEIGHT    = Math.floor((SCREEN_HEIGHT - GRID_RESERVE) / MAX_WEEKS);
+// Each pill is ~13px tall + 2px margin = 15px, day number takes ~26px
+const PILL_HEIGHT    = 15;
+const DAY_NUM_HEIGHT = 26;
+const MAX_PILLS      = Math.max(1, Math.floor((CELL_HEIGHT - DAY_NUM_HEIGHT) / PILL_HEIGHT));
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/** Get a short pill label for an event */
+function getPillLabel(event: SportEvent): string {
+  if (event.awayAbbrev && event.homeAbbrev) {
+    return `${event.awayAbbrev}@${event.homeAbbrev}`;
+  }
+  // For non-team sports, shorten the name
+  const name = event.name;
+  if (name.length > 10) return name.slice(0, 9) + '…';
+  return name;
+}
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -253,7 +278,6 @@ function DisplayEventBlock({ pd, totalWidth }: { pd: PositionedDisplay; totalWid
   const sport  = pd.display.isGroup ? pd.display.sport : pd.display.event.sport;
   const color  = SPORT_COLORS[sport];
 
-  // ── Grouped NFL block ──
   if (pd.display.isGroup) {
     const group = pd.display as GroupedEvent;
     return (
@@ -271,44 +295,27 @@ function DisplayEventBlock({ pd, totalWidth }: { pd: PositionedDisplay; totalWid
     );
   }
 
-  // ── Single event block ──
   const e = pd.display.event;
   const isTeamSport = TEAM_SPORTS.includes(sport);
 
   return (
     <View style={[styles.eventBlock, { top, height, left, width, backgroundColor: color }]}>
       <Text style={styles.eventBlockName} numberOfLines={2}>{e.name}</Text>
-
-      {/* Logos */}
       {isTeamSport && (e.homeLogo || e.awayLogo) && (
         <View style={styles.logoRow}>
           {e.awayLogo && (
-            <Image
-              source={{ uri: e.awayLogo }}
-              style={styles.teamLogo}
-              resizeMode="contain"
-            />
+            <Image source={{ uri: e.awayLogo }} style={styles.teamLogo} resizeMode="contain" />
           )}
           {e.homeLogo && (
-            <Image
-              source={{ uri: e.homeLogo }}
-              style={styles.teamLogo}
-              resizeMode="contain"
-            />
+            <Image source={{ uri: e.homeLogo }} style={styles.teamLogo} resizeMode="contain" />
           )}
         </View>
       )}
       {!isTeamSport && e.eventLogo && (
         <View style={styles.logoRow}>
-          <Image
-            source={{ uri: e.eventLogo }}
-            style={styles.eventLogoImg}
-            resizeMode="contain"
-          />
+          <Image source={{ uri: e.eventLogo }} style={styles.eventLogoImg} resizeMode="contain" />
         </View>
       )}
-
-      {/* Time & channel */}
       {e.time && <Text style={styles.eventBlockTime}>{e.time}</Text>}
       {e.channel && <Text style={styles.eventBlockChannel} numberOfLines={1}>{e.channel}</Text>}
     </View>
@@ -395,31 +402,43 @@ export default function CalendarScreen() {
 
         <View style={styles.grid}>
           {Array.from({ length: firstDayOfWeek }).map((_, i) => (
-            <View key={`empty-${i}`} style={styles.cell} />
+            <View key={`empty-${i}`} style={[styles.cell, { height: CELL_HEIGHT }]} />
           ))}
           {Array.from({ length: daysInMonth }).map((_, i) => {
             const day     = i + 1;
             const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-            const events  = eventsByDate[dateStr] ?? [];
+            const events = (eventsByDate[dateStr] ?? []).slice().sort((a, b) => {
+              const isIndividual = (s: Sport) => s === 'golf' || s === 'tennis';
+              if (isIndividual(a.sport) && !isIndividual(b.sport)) return -1;
+              if (!isIndividual(a.sport) && isIndividual(b.sport)) return 1;
+              const aHour = parseTimeToHour(a.time) ?? 25;
+              const bHour = parseTimeToHour(b.time) ?? 25;
+              return aHour - bHour;
+            });
+
             const isToday    = dateStr === today;
             const isSelected = dateStr === selectedDate;
+            const visibleEvents = events.slice(0, MAX_PILLS);
+            const remaining = events.length - MAX_PILLS;
 
             return (
               <TouchableOpacity
                 key={day}
-                style={[styles.cell, isSelected && styles.cellSelected]}
+                style={[styles.cell, { height: CELL_HEIGHT }, isSelected && styles.cellSelected]}
                 onPress={() => handleDatePress(dateStr, isSelected)}
               >
                 <View style={[styles.dayNum, isToday && styles.dayNumToday]}>
                   <Text style={[styles.dayNumText, isToday && { color: '#fff' }]}>{day}</Text>
                 </View>
-                {events.slice(0, 2).map((e) => (
+                {visibleEvents.map((e) => (
                   <View key={e.id} style={[styles.pill, { backgroundColor: SPORT_COLORS[e.sport] }]}>
-                    <Text style={styles.pillText} numberOfLines={1}>{e.name}</Text>
+                    <Text style={styles.pillText} numberOfLines={1}>
+                      {getPillLabel(e)}
+                    </Text>
                   </View>
                 ))}
-                {events.length > 2 && (
-                  <Text style={styles.moreText}>+{events.length - 2} more</Text>
+                {remaining > 0 && (
+                  <Text style={styles.moreText}>+{remaining} more</Text>
                 )}
               </TouchableOpacity>
             );
@@ -455,6 +474,13 @@ export default function CalendarScreen() {
                             <Text style={styles.eventName}>{e.name}</Text>
                             {e.channel && <Text style={styles.eventMeta}>{e.channel}</Text>}
                           </View>
+                          {e.eventLogo && (
+                            <Image
+                              source={{ uri: e.eventLogo }}
+                              style={styles.ungroupedEventLogo}
+                              resizeMode="contain"
+                            />
+                          )}
                           <Text style={styles.sportTag}>{e.sport.toUpperCase()}</Text>
                         </View>
                       );
@@ -546,23 +572,23 @@ const styles = StyleSheet.create({
   safe:          { flex: 1, backgroundColor: '#fff' },
   scrollContent: { paddingBottom: 40 },
 
-  header:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 16 },
+  header:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 12 },
   navBtn:      { fontSize: 28, color: '#378ADD', paddingHorizontal: 8 },
   monthTitle:  { fontSize: 20, fontWeight: '600' },
-  loadingRow:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 8 },
+  loadingRow:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 4 },
   loadingText: { fontSize: 13, color: '#999' },
 
   dayLabels:    { flexDirection: 'row', paddingHorizontal: 4 },
-  dayLabel:     { flex: 1, textAlign: 'center', fontSize: 11, color: '#999', fontWeight: '500', paddingVertical: 6 },
+  dayLabel:     { flex: 1, textAlign: 'center', fontSize: 11, color: '#999', fontWeight: '500', paddingVertical: 4 },
   grid:         { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 4 },
-  cell:         { width: '14.28%', minHeight: 80, padding: 4, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#eee' },
+  cell:         { width: '14.28%', padding: 2, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#eee' },
   cellSelected: { backgroundColor: '#f0f7ff' },
-  dayNum:       { width: 24, height: 24, alignItems: 'center', justifyContent: 'center', marginBottom: 2 },
-  dayNumToday:  { backgroundColor: '#378ADD', borderRadius: 12 },
-  dayNumText:   { fontSize: 13, fontWeight: '500', color: '#222' },
-  pill:         { borderRadius: 3, paddingHorizontal: 4, paddingVertical: 1, marginBottom: 2 },
-  pillText:     { fontSize: 9, color: '#fff' },
-  moreText:     { fontSize: 9, color: '#999' },
+  dayNum:       { width: 22, height: 22, alignItems: 'center', justifyContent: 'center', marginBottom: 2 },
+  dayNumToday:  { backgroundColor: '#378ADD', borderRadius: 11 },
+  dayNumText:   { fontSize: 12, fontWeight: '500', color: '#222' },
+  pill:         { borderRadius: 3, paddingHorizontal: 3, paddingVertical: 1, marginBottom: 2 },
+  pillText:     { fontSize: 8, color: '#fff' },
+  moreText:     { fontSize: 8, color: '#999' },
 
   dayDetail:       { margin: 16, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, borderColor: '#eee', overflow: 'hidden' },
   dayDetailHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, paddingBottom: 12 },
@@ -571,13 +597,14 @@ const styles = StyleSheet.create({
   addEventBtnText: { color: '#fff', fontSize: 13, fontWeight: '600' },
   noEvents:        { color: '#bbb', fontSize: 14, textAlign: 'center', paddingVertical: 24 },
 
-  ungroupedSection: { paddingHorizontal: 16, paddingBottom: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#eee' },
-  ungroupedLabel:   { fontSize: 11, color: '#aaa', fontWeight: '600', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 },
-  eventRow:         { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#f0f0f0' },
-  eventDot:         { width: 10, height: 10, borderRadius: 5 },
-  eventName:        { fontSize: 14, fontWeight: '500', color: '#111' },
-  eventMeta:        { fontSize: 12, color: '#888', marginTop: 2 },
-  sportTag:         { fontSize: 10, color: '#bbb', fontWeight: '600' },
+  ungroupedSection:   { paddingHorizontal: 16, paddingBottom: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#eee' },
+  ungroupedLabel:     { fontSize: 11, color: '#aaa', fontWeight: '600', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 },
+  eventRow:           { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#f0f0f0' },
+  eventDot:           { width: 10, height: 10, borderRadius: 5 },
+  eventName:          { fontSize: 14, fontWeight: '500', color: '#111' },
+  eventMeta:          { fontSize: 12, color: '#888', marginTop: 2 },
+  sportTag:           { fontSize: 10, color: '#bbb', fontWeight: '600' },
+  ungroupedEventLogo: { width: 24, height: 24, marginRight: 4 },
 
   timelineOuter: { marginTop: 8 },
   hourLabel:     { fontSize: 10, color: '#aaa', fontWeight: '500', textAlign: 'right', paddingRight: 8, width: TIME_COL_W },
@@ -590,7 +617,6 @@ const styles = StyleSheet.create({
   groupList:            { gap: 2 },
   groupItem:            { fontSize: 9, color: 'rgba(255,255,255,0.9)', lineHeight: 13, flexWrap: 'wrap' },
 
-  // Logos
   logoRow:      { flexDirection: 'row', gap: 4, marginTop: 4, marginBottom: 2 },
   teamLogo:     { width: LOGO_SIZE, height: LOGO_SIZE, borderRadius: 2 },
   eventLogoImg: { width: LOGO_SIZE * 2, height: LOGO_SIZE, borderRadius: 2 },

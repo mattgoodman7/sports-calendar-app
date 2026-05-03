@@ -21,7 +21,6 @@ export type TeamSportFilter = 'all' | 'national_tv' | 'my_team' | 'my_team_and_n
 export type TournamentSportFilter = 'majors' | 'all' | 'custom';
 export type CombatSportFilter = 'title_fights' | 'main_events' | 'all';
 
-// All supported soccer league slugs (ESPN API identifiers)
 export const SOCCER_LEAGUES: { id: string; label: string }[] = [
   { id: 'usa.1',            label: 'MLS' },
   { id: 'eng.1',            label: 'Premier League' },
@@ -40,16 +39,12 @@ export const SOCCER_LEAGUES: { id: string; label: string }[] = [
 
 export interface SportSetting {
   sport: Sport;
-  // Team sports
   teamFilter?: TeamSportFilter;
   myTeams?: Team[];
   myTeamsByLeague?: Record<string, Team[]>;
-  // Tournament sports
   tournamentFilter?: TournamentSportFilter;
   selectedTournaments?: Tournament[];
-  // Combat sports
   combatFilter?: CombatSportFilter;
-  // Soccer
   selectedSoccerLeagues?: string[];
 }
 
@@ -61,9 +56,11 @@ export interface SportEvent {
   time?: string;
   homeTeam?: string;
   awayTeam?: string;
-  homeLogo?: string;   // team logo URL for home team
-  awayLogo?: string;   // team logo URL for away team
-  eventLogo?: string;  // event/tournament logo for individual sports
+  homeAbbrev?: string;  // team abbreviation e.g. "LAL"
+  awayAbbrev?: string;  // team abbreviation e.g. "BOS"
+  homeLogo?: string;
+  awayLogo?: string;
+  eventLogo?: string;
   channel?: string;
   venue?: string;
   isNationalTv?: boolean;
