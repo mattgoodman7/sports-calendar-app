@@ -61,15 +61,18 @@ export default function SettingsScreen() {
 
             return (
               <View key={sport} style={[styles.row, !isLast && styles.rowBorder]}>
-                {/* Toggle */}
                 <Text style={styles.sportEmoji}>{SPORT_EMOJIS[sport]}</Text>
-                <Text style={styles.rowLabel}>{label}</Text>
+                <TouchableOpacity
+                  style={{ flex: 1 }}
+                  onPress={() => isEnabled && router.push(`/sport-settings?sport=${sport}`)}
+                >
+                  <Text style={styles.rowLabel}>{label}</Text>
+                </TouchableOpacity>
                 <Switch
                   value={isEnabled}
                   onValueChange={() => toggleSport(sport)}
                   trackColor={{ true: '#378ADD' }}
                 />
-                {/* Chevron — only shown when sport is enabled */}
                 {isEnabled && (
                   <TouchableOpacity
                     style={styles.chevronBtn}
