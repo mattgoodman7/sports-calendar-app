@@ -28,6 +28,7 @@ export const SOCCER_LEAGUES: { id: string; label: string }[] = [
   { id: 'esp.1',            label: 'La Liga' },
   { id: 'ger.1',            label: 'Bundesliga' },
   { id: 'fra.1',            label: 'Ligue 1' },
+  { id: 'ita.1',            label: 'Serie A' },
   { id: 'uefa.champions',   label: 'Champions League' },
   { id: 'uefa.europa',      label: 'Europa League' },
   { id: 'fifa.world',       label: 'World Cup' },
