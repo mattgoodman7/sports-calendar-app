@@ -17,20 +17,20 @@ import { Sport, SportEvent, useAppStore } from '../../lib/store';
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const SPORT_COLORS: Record<Sport, string> = {
-  nfl:    '#1D3D7B',
-  nba:    '#C35B10',
-  mlb:    '#0D5A2A',
-  nhl:    '#5A1A6B',
-  soccer: '#2A5A1A',
-  nascar: '#FFD700',
-  f1:     '#E8002D',
-  tennis: '#4A90D9',
+  nfl:    '#1A1A1A',
+  nba:    '#C8622A',
+  mlb:    '#8B5E3C',
+  nhl:    '#A8D8EA',
+  soccer: '#7BC67E',
+  nascar: '#FF2200',
+  f1:     '#FF2200',
+  tennis: '#E8D44D',
   golf:   '#3A7D44',
-  ncaafb: '#8B2FC9',
-  ncaamb: '#C9A22F',
-  mma:    '#C0392B',
-  wnba:   '#FF6B35',
-  boxing: '#2C3E50',
+  ncaafb: '#1A1A1A',
+  ncaamb: '#C8622A',
+  mma:    '#8B1A1A',
+  wnba:   '#6A0DAD',
+  boxing: '#8B1A1A',
 };
 
 const SPORT_DURATION_HOURS: Record<Sport, number> = {
