@@ -42,8 +42,8 @@ export interface SportSetting {
   sport: Sport;
   // Team sports
   teamFilter?: TeamSportFilter;
-  myTeams?: Team[];                          // for non-soccer team sports
-  myTeamsByLeague?: Record<string, Team[]>;  // for soccer, keyed by league id
+  myTeams?: Team[];
+  myTeamsByLeague?: Record<string, Team[]>;
   // Tournament sports
   tournamentFilter?: TournamentSportFilter;
   selectedTournaments?: Tournament[];
@@ -61,6 +61,9 @@ export interface SportEvent {
   time?: string;
   homeTeam?: string;
   awayTeam?: string;
+  homeLogo?: string;   // team logo URL for home team
+  awayLogo?: string;   // team logo URL for away team
+  eventLogo?: string;  // event/tournament logo for individual sports
   channel?: string;
   venue?: string;
   isNationalTv?: boolean;

@@ -21,10 +21,11 @@ const ESPN_PATHS: Record<Sport, string> = {
   boxing: 'boxing/boxing',
 };
 
-// Extra params required per sport to get full game listings
+const TEAM_SPORTS: Sport[] = ['nfl', 'nba', 'mlb', 'nhl', 'soccer', 'wnba', 'ncaafb', 'ncaamb'];
+
 const EXTRA_PARAMS: Partial<Record<Sport, Record<string, any>>> = {
-  ncaafb: { groups: 80 },   // FBS (top tier college football)
-  ncaamb: { groups: 100 },  // All D1 college basketball
+  ncaafb: { groups: 80 },
+  ncaamb: { groups: 100 },
 };
 
 const GOLF_MAJORS = [
@@ -41,11 +42,42 @@ function isMajorTournament(name: string, sport: Sport): boolean {
   return GOLF_MAJORS.some((m) => lower.includes(m));
 }
 
+/**
+ * Extract logo URL from an ESPN team object.
+ * Handles both formats:
+ * - Direct string: team.logo = "https://..."
+ * - Array: team.logos = [{ href: "https://...", rel: ["default"] }]
+ */
+function getTeamLogo(team?: any): string | undefined {
+  if (!team) return undefined;
+  if (typeof team.logo === 'string' && team.logo) return team.logo;
+  if (Array.isArray(team.logos) && team.logos.length > 0) {
+    const preferred = team.logos.find((l: any) =>
+      l.rel?.includes('default') || l.rel?.includes('full')
+    );
+    return (preferred ?? team.logos[0])?.href;
+  }
+  return undefined;
+}
+
+/**
+ * Extract logo URL from an ESPN league/event logos array.
+ */
+function getEventLogo(logos?: any[]): string | undefined {
+  if (!logos || logos.length === 0) return undefined;
+  const preferred = logos.find((l: any) =>
+    l.rel?.includes('default') || l.rel?.includes('full')
+  );
+  return (preferred ?? logos[0])?.href;
+}
+
 function normalizeEvent(raw: any, sport: Sport): SportEvent[] {
   const competition = raw.competitions?.[0];
   const competitors = competition?.competitors ?? [];
-  const home = competitors.find((c: any) => c.homeAway === 'home')?.team?.displayName ?? '';
-  const away = competitors.find((c: any) => c.homeAway === 'away')?.team?.displayName ?? '';
+  const homeComp = competitors.find((c: any) => c.homeAway === 'home');
+  const awayComp = competitors.find((c: any) => c.homeAway === 'away');
+  const home = homeComp?.team?.displayName ?? '';
+  const away = awayComp?.team?.displayName ?? '';
   const dateStr = raw.date ? format(new Date(raw.date), 'yyyy-MM-dd') : '';
   const name = home && away
     ? `${away} @ ${home}`
@@ -53,6 +85,13 @@ function normalizeEvent(raw: any, sport: Sport): SportEvent[] {
   const channel = competition?.broadcasts?.[0]?.names?.[0];
   const isNationalTv = (competition?.broadcasts ?? []).length > 0;
   const venue = competition?.venue?.fullName;
+
+  // Extract logos
+  const homeLogo = TEAM_SPORTS.includes(sport) ? getTeamLogo(homeComp?.team) : undefined;
+  const awayLogo = TEAM_SPORTS.includes(sport) ? getTeamLogo(awayComp?.team) : undefined;
+  const eventLogo = !TEAM_SPORTS.includes(sport)
+    ? getEventLogo(raw.leagues?.[0]?.logos)
+    : undefined;
 
   if (sport === 'golf') {
     const isMajor = isMajorTournament(name, sport);
@@ -67,6 +106,7 @@ function normalizeEvent(raw: any, sport: Sport): SportEvent[] {
       channel,
       isNationalTv,
       isMajor,
+      eventLogo,
     }));
   }
 
@@ -84,6 +124,7 @@ function normalizeEvent(raw: any, sport: Sport): SportEvent[] {
       channel,
       isNationalTv,
       isMajor,
+      eventLogo,
     }));
   }
 
@@ -95,6 +136,9 @@ function normalizeEvent(raw: any, sport: Sport): SportEvent[] {
     time: raw.date ? format(new Date(raw.date), 'h:mm a') : undefined,
     homeTeam: home || undefined,
     awayTeam: away || undefined,
+    homeLogo,
+    awayLogo,
+    eventLogo,
     venue,
     channel,
     isNationalTv,
@@ -150,37 +194,35 @@ export async function fetchGamesForMonth(
       });
   }
 
-if (sport === 'ncaafb' || sport === 'ncaamb') {
-  const extraParams = EXTRA_PARAMS[sport] ?? {};
-  
-  // Fetch each Saturday of the month (college games are weekend-based)
-  const saturdays: Date[] = [];
-  const start = startOfMonth(new Date(year, month));
-  const end = endOfMonth(new Date(year, month));
-  let current = start;
-  while (current <= end) {
-    if (current.getDay() === 6) saturdays.push(new Date(current));
-    current = addDays(current, 1);
+  if (sport === 'ncaafb' || sport === 'ncaamb') {
+    const extraParams = EXTRA_PARAMS[sport] ?? {};
+    const saturdays: Date[] = [];
+    const start = startOfMonth(new Date(year, month));
+    const end = endOfMonth(new Date(year, month));
+    let current = start;
+    while (current <= end) {
+      if (current.getDay() === 6) saturdays.push(new Date(current));
+      current = addDays(current, 1);
+    }
+
+    const results = await Promise.allSettled(
+      saturdays.map((saturday) =>
+        fetchLeague(ESPN_PATHS[sport], sport, year, month, {
+          ...extraParams,
+          dates: format(saturday, 'yyyyMMdd'),
+        })
+      )
+    );
+
+    const seen = new Set<string>();
+    return results
+      .flatMap((r) => (r.status === 'fulfilled' ? r.value : []))
+      .filter((e) => {
+        if (seen.has(e.id)) return false;
+        seen.add(e.id);
+        return true;
+      });
   }
-
-  const results = await Promise.allSettled(
-    saturdays.map((saturday) =>
-      fetchLeague(ESPN_PATHS[sport], sport, year, month, {
-        ...extraParams,
-        dates: format(saturday, 'yyyyMMdd'),
-      })
-    )
-  );
-
-  const seen = new Set<string>();
-  return results
-    .flatMap((r) => (r.status === 'fulfilled' ? r.value : []))
-    .filter((e) => {
-      if (seen.has(e.id)) return false;
-      seen.add(e.id);
-      return true;
-    });
-}
 
   const extraParams = EXTRA_PARAMS[sport] ?? {};
   return fetchLeague(ESPN_PATHS[sport], sport, year, month, extraParams);

@@ -2,6 +2,7 @@ import { addMonths, format, getDay, getDaysInMonth, startOfMonth, subMonths } fr
 import { useRef, useState } from 'react';
 import {
     ActivityIndicator,
+    Image,
     Modal,
     ScrollView,
     StyleSheet,
@@ -39,9 +40,9 @@ const SPORT_DURATION_HOURS: Record<Sport, number> = {
   ncaamb: 2, mma:    3, wnba:   2, boxing: 3,
 };
 
-// How close two NFL game times must be (in minutes) to be grouped together
+const TEAM_SPORTS: Sport[] = ['nfl', 'nba', 'mlb', 'nhl', 'soccer', 'wnba', 'ncaafb', 'ncaamb'];
+
 const NFL_GROUP_WINDOW_MINUTES = 45;
-// Minimum number of games in a time window to trigger grouping
 const NFL_GROUP_THRESHOLD = 3;
 
 const DAY_LABELS  = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -49,6 +50,7 @@ const HOUR_HEIGHT = 80;
 const TOTAL_HOURS = 24;
 const TIME_COL_W  = 52;
 const EVENT_COL_W = 160;
+const LOGO_SIZE   = 20;
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -91,16 +93,10 @@ function parseTimeToHour(timeStr?: string): number | null {
   return h + min / 60;
 }
 
-/**
- * Group NFL games that start within NFL_GROUP_WINDOW_MINUTES of each other
- * and have 3+ games in that window. Returns a mix of GroupedEvent and
- * individual SportEvent objects ready for layout.
- */
 function groupNflGames(events: SportEvent[]): DisplayEvent[] {
   const nflGames = events.filter((e) => e.sport === 'nfl');
   const otherEvents = events.filter((e) => e.sport !== 'nfl');
 
-  // Sort NFL games by start time
   const timedNfl: { event: SportEvent; hour: number }[] = [];
   const untimedNfl: SportEvent[] = [];
 
@@ -111,7 +107,6 @@ function groupNflGames(events: SportEvent[]): DisplayEvent[] {
   }
   timedNfl.sort((a, b) => a.hour - b.hour);
 
-  // Greedy grouping: scan through sorted games and cluster by window
   const processed = new Set<string>();
   const displayEvents: DisplayEvent[] = [];
 
@@ -121,16 +116,12 @@ function groupNflGames(events: SportEvent[]): DisplayEvent[] {
     const windowStart = timedNfl[i].hour;
     const windowEnd = windowStart + NFL_GROUP_WINDOW_MINUTES / 60;
 
-    // Find all games within the window
     const group = timedNfl.filter(
       (g) => !processed.has(g.event.id) && g.hour >= windowStart && g.hour <= windowEnd
     );
 
     if (group.length >= NFL_GROUP_THRESHOLD) {
-      // Mark all as processed
       group.forEach((g) => processed.add(g.event.id));
-
-      // Use earliest time
       const earliestHour = Math.min(...group.map((g) => g.hour));
       const earliestEvent = group.find((g) => g.hour === earliestHour)!;
 
@@ -143,7 +134,6 @@ function groupNflGames(events: SportEvent[]): DisplayEvent[] {
         isGroup: true,
       });
     } else {
-      // Not enough for a group — show individually
       processed.add(timedNfl[i].event.id);
       displayEvents.push({
         event: timedNfl[i].event,
@@ -153,12 +143,10 @@ function groupNflGames(events: SportEvent[]): DisplayEvent[] {
     }
   }
 
-  // Add untimed NFL games as individual events
   for (const e of untimedNfl) {
     displayEvents.push({ event: e, startHour: 0, isGroup: false });
   }
 
-  // Add non-NFL events as individual events
   for (const e of otherEvents) {
     const hour = parseTimeToHour(e.time);
     displayEvents.push({ event: e, startHour: hour ?? 0, isGroup: false });
@@ -167,9 +155,6 @@ function groupNflGames(events: SportEvent[]): DisplayEvent[] {
   return displayEvents;
 }
 
-/**
- * Layout display events into columns for side-by-side rendering.
- */
 function layoutDisplayEvents(displays: DisplayEvent[]): {
   positioned: PositionedDisplay[];
   ungrouped: DisplayEvent[];
@@ -268,28 +253,62 @@ function DisplayEventBlock({ pd, totalWidth }: { pd: PositionedDisplay; totalWid
   const sport  = pd.display.isGroup ? pd.display.sport : pd.display.event.sport;
   const color  = SPORT_COLORS[sport];
 
-if (pd.display.isGroup) {
-  const group = pd.display as GroupedEvent;
-
-  return (
-    <View style={[styles.eventBlock, { top, height, left, width, backgroundColor: color }]}>
-      <Text style={styles.eventBlockTime}>{group.time}</Text>
-      <Text style={styles.eventBlockGroupLabel}>NFL Games</Text>
-      <View style={styles.groupList}>
-        {group.games.map((g) => (
-          <Text key={g.id} style={styles.groupItem}>
-            · {g.name}{g.time || g.channel ? `  ${[g.time, g.channel].filter(Boolean).join(' · ')}` : ''}
-          </Text>
-        ))}
+  // ── Grouped NFL block ──
+  if (pd.display.isGroup) {
+    const group = pd.display as GroupedEvent;
+    return (
+      <View style={[styles.eventBlock, { top, height, left, width, backgroundColor: color }]}>
+        <Text style={styles.eventBlockTime}>{group.time}</Text>
+        <Text style={styles.eventBlockGroupLabel}>NFL Games</Text>
+        <View style={styles.groupList}>
+          {group.games.map((g) => (
+            <Text key={g.id} style={styles.groupItem}>
+              · {g.name}{g.time || g.channel ? `  ${[g.time, g.channel].filter(Boolean).join(' · ')}` : ''}
+            </Text>
+          ))}
+        </View>
       </View>
-    </View>
-  );
-}
+    );
+  }
 
+  // ── Single event block ──
   const e = pd.display.event;
+  const isTeamSport = TEAM_SPORTS.includes(sport);
+
   return (
     <View style={[styles.eventBlock, { top, height, left, width, backgroundColor: color }]}>
       <Text style={styles.eventBlockName} numberOfLines={2}>{e.name}</Text>
+
+      {/* Logos */}
+      {isTeamSport && (e.homeLogo || e.awayLogo) && (
+        <View style={styles.logoRow}>
+          {e.awayLogo && (
+            <Image
+              source={{ uri: e.awayLogo }}
+              style={styles.teamLogo}
+              resizeMode="contain"
+            />
+          )}
+          {e.homeLogo && (
+            <Image
+              source={{ uri: e.homeLogo }}
+              style={styles.teamLogo}
+              resizeMode="contain"
+            />
+          )}
+        </View>
+      )}
+      {!isTeamSport && e.eventLogo && (
+        <View style={styles.logoRow}>
+          <Image
+            source={{ uri: e.eventLogo }}
+            style={styles.eventLogoImg}
+            resizeMode="contain"
+          />
+        </View>
+      )}
+
+      {/* Time & channel */}
       {e.time && <Text style={styles.eventBlockTime}>{e.time}</Text>}
       {e.channel && <Text style={styles.eventBlockChannel} numberOfLines={1}>{e.channel}</Text>}
     </View>
@@ -423,11 +442,10 @@ export default function CalendarScreen() {
               <Text style={styles.noEvents}>No games scheduled</Text>
             ) : (
               <>
-                {/* Ungrouped (no time) events */}
                 {ungrouped.length > 0 && (
                   <View style={styles.ungroupedSection}>
                     <Text style={styles.ungroupedLabel}>Time TBD</Text>
-                    {ungrouped.map((d, idx) => {
+                    {ungrouped.map((d) => {
                       const e = d.isGroup ? null : d.event;
                       if (!e) return null;
                       return (
@@ -444,7 +462,6 @@ export default function CalendarScreen() {
                   </View>
                 )}
 
-                {/* Outlook-style timeline */}
                 {positioned.length > 0 && (
                   <ScrollView
                     horizontal
@@ -455,7 +472,7 @@ export default function CalendarScreen() {
                       <HourLabels />
                       <View style={{ width: timelineWidth, height: timelineHeight }}>
                         <HourGrid width={timelineWidth} />
-                        {positioned.map((pd, idx) => (
+                        {positioned.map((pd) => (
                           <DisplayEventBlock
                             key={pd.display.isGroup ? pd.display.id : pd.display.event.id}
                             pd={pd}
@@ -565,13 +582,19 @@ const styles = StyleSheet.create({
   timelineOuter: { marginTop: 8 },
   hourLabel:     { fontSize: 10, color: '#aaa', fontWeight: '500', textAlign: 'right', paddingRight: 8, width: TIME_COL_W },
 
-  eventBlock:         { position: 'absolute', borderRadius: 6, padding: 6, overflow: 'hidden' },
-  eventBlockName:     { fontSize: 11, color: '#fff', fontWeight: '600', lineHeight: 14 },
-  eventBlockTime:     { fontSize: 10, color: 'rgba(255,255,255,0.85)', marginTop: 2 },
-  eventBlockChannel:  { fontSize: 10, color: 'rgba(255,255,255,0.7)', marginTop: 1 },
+  eventBlock:           { position: 'absolute', borderRadius: 6, padding: 6, overflow: 'hidden' },
+  eventBlockName:       { fontSize: 11, color: '#fff', fontWeight: '600', lineHeight: 14 },
+  eventBlockTime:       { fontSize: 10, color: 'rgba(255,255,255,0.85)', marginTop: 2 },
+  eventBlockChannel:    { fontSize: 10, color: 'rgba(255,255,255,0.7)', marginTop: 1 },
   eventBlockGroupLabel: { fontSize: 11, color: '#fff', fontWeight: '700', marginTop: 2, marginBottom: 3 },
-  groupList:      { gap: 2 },
-  groupItem: { fontSize: 9, color: 'rgba(255,255,255,0.9)', lineHeight: 13, flexWrap: 'wrap' },
+  groupList:            { gap: 2 },
+  groupItem:            { fontSize: 9, color: 'rgba(255,255,255,0.9)', lineHeight: 13, flexWrap: 'wrap' },
+
+  // Logos
+  logoRow:      { flexDirection: 'row', gap: 4, marginTop: 4, marginBottom: 2 },
+  teamLogo:     { width: LOGO_SIZE, height: LOGO_SIZE, borderRadius: 2 },
+  eventLogoImg: { width: LOGO_SIZE * 2, height: LOGO_SIZE, borderRadius: 2 },
+
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
   modal:         { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24, paddingBottom: 40 },
   modalTitle:    { fontSize: 18, fontWeight: '600', marginBottom: 16 },
