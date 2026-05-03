@@ -2,7 +2,7 @@ import { ConfigContext, ExpoConfig } from 'expo/config';
 
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
-  name: 'Slate',
+  name: process.env.APP_VARIANT === 'development' ? 'Slate Dev' : 'Slate',
   slug: 'slate-app',
   version: '1.0.0',
   orientation: 'portrait',
