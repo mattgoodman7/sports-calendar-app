@@ -10,15 +10,16 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import TeamPicker from '../../components/TeamPicker';
-import { CombatSportFilter, Sport, TeamSportFilter, TournamentSportFilter, useAppStore } from '../../lib/store';
+import { CombatSportFilter, SOCCER_LEAGUES, Sport, TeamSportFilter, TournamentSportFilter, useAppStore } from '../../lib/store';
 
-const TEAM_SPORTS: Sport[] = ['nfl', 'nba', 'mlb', 'nhl', 'soccer', 'wnba', 'ncaafb', 'ncaamb'];
+const TEAM_SPORTS: Sport[]       = ['nfl', 'nba', 'mlb', 'nhl', 'soccer', 'wnba', 'ncaafb', 'ncaamb'];
 const TOURNAMENT_SPORTS: Sport[] = ['golf', 'tennis'];
-const MOTOR_SPORTS: Sport[] = ['f1', 'nascar'];
-const COMBAT_SPORTS: Sport[] = ['mma','boxing'];
+const MOTOR_SPORTS: Sport[]      = ['f1', 'nascar'];
+const COMBAT_SPORTS: Sport[]     = ['mma', 'boxing'];
+const COLLEGE_SPORTS: Sport[]    = ['ncaafb', 'ncaamb'];
 
 const SPORT_LABELS: Record<Sport, string> = {
-  nfl: 'NFL', nba: 'NBA', mlb: 'MLB', nhl: 'NHL', soccer: 'Soccer / MLS',
+  nfl: 'NFL', nba: 'NBA', mlb: 'MLB', nhl: 'NHL', soccer: 'Soccer',
   wnba: 'WNBA', ncaafb: 'College Football', ncaamb: 'College Basketball',
   golf: 'Golf', tennis: 'Tennis', f1: 'Formula 1', nascar: 'NASCAR', mma: 'MMA',
   boxing: 'Boxing',
@@ -32,22 +33,28 @@ const SPORT_EMOJIS: Record<Sport, string> = {
 };
 
 const TEAM_FILTER_OPTIONS: { key: TeamSportFilter; label: string }[] = [
-  { key: 'all', label: 'All games' },
-  { key: 'national_tv', label: 'National TV only' },
-  { key: 'my_team', label: 'My team only' },
+  { key: 'all',                     label: 'All games' },
+  { key: 'national_tv',             label: 'National TV only' },
+  { key: 'my_team',                 label: 'My team only' },
+  { key: 'my_team_and_national_tv', label: 'My team + National TV' },
+];
+
+const COLLEGE_FILTER_OPTIONS: { key: TeamSportFilter; label: string }[] = [
+  { key: 'national_tv',             label: 'National TV only' },
+  { key: 'my_team',                 label: 'My team only' },
   { key: 'my_team_and_national_tv', label: 'My team + National TV' },
 ];
 
 const TOURNAMENT_FILTER_OPTIONS: { key: TournamentSportFilter; label: string }[] = [
   { key: 'majors', label: 'Majors only' },
-  { key: 'all', label: 'All tournaments' },
+  { key: 'all',    label: 'All tournaments' },
   { key: 'custom', label: 'Custom selection' },
 ];
 
 const COMBAT_FILTER_OPTIONS: { key: CombatSportFilter; label: string }[] = [
   { key: 'title_fights', label: 'Title fights only' },
-  { key: 'main_events', label: 'Main events' },
-  { key: 'all', label: 'All fights' },
+  { key: 'main_events',  label: 'Main events' },
+  { key: 'all',          label: 'All fights' },
 ];
 
 export default function SettingsScreen() {
@@ -69,6 +76,14 @@ export default function SettingsScreen() {
         },
       ]
     );
+  };
+
+  const toggleSoccerLeague = (leagueId: string, currentLeagues: string[]) => {
+    const updated = currentLeagues.includes(leagueId)
+      ? currentLeagues.filter((l) => l !== leagueId)
+      : [...currentLeagues, leagueId];
+    if (updated.length === 0) return;
+    updateSportSetting('soccer', { selectedSoccerLeagues: updated });
   };
 
   return (
@@ -100,10 +115,27 @@ export default function SettingsScreen() {
                   />
                 </TouchableOpacity>
 
-                {/* Per-sport settings */}
-                {isEnabled && TEAM_SPORTS.includes(sport) && (
+                {/* Soccer — league picker + team filter */}
+                {isEnabled && sport === 'soccer' && (
                   <View style={styles.subSection}>
-                    <Text style={styles.subSectionLabel}>Show</Text>
+                    <Text style={styles.subSectionLabel}>Leagues</Text>
+                    <View style={styles.chipRow}>
+                      {SOCCER_LEAGUES.map((league) => {
+                        const selected = (setting?.selectedSoccerLeagues ?? ['usa.1']).includes(league.id);
+                        return (
+                          <TouchableOpacity
+                            key={league.id}
+                            style={[styles.chip, selected && styles.chipSelected]}
+                            onPress={() => toggleSoccerLeague(league.id, setting?.selectedSoccerLeagues ?? ['usa.1'])}
+                          >
+                            <Text style={[styles.chipText, selected && { color: '#fff' }]}>
+                              {league.label}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                    <Text style={[styles.subSectionLabel, { marginTop: 12 }]}>Show</Text>
                     <View style={styles.chipRow}>
                       {TEAM_FILTER_OPTIONS.map((opt) => (
                         <TouchableOpacity
@@ -118,7 +150,34 @@ export default function SettingsScreen() {
                       ))}
                     </View>
                     {(setting?.teamFilter === 'my_team' || setting?.teamFilter === 'my_team_and_national_tv') && (
-                        <TeamPicker
+                      <TeamPicker
+                        sport={sport}
+                        selectedTeams={setting?.favoriteTeams ?? []}
+                        onSelect={(teams) => updateSportSetting(sport, { favoriteTeams: teams })}
+                      />
+                    )}
+                  </View>
+                )}
+
+                {/* Other team sports */}
+                {isEnabled && TEAM_SPORTS.includes(sport) && sport !== 'soccer' && (
+                  <View style={styles.subSection}>
+                    <Text style={styles.subSectionLabel}>Show</Text>
+                    <View style={styles.chipRow}>
+                      {(COLLEGE_SPORTS.includes(sport) ? COLLEGE_FILTER_OPTIONS : TEAM_FILTER_OPTIONS).map((opt) => (
+                        <TouchableOpacity
+                          key={opt.key}
+                          style={[styles.chip, setting?.teamFilter === opt.key && styles.chipSelected]}
+                          onPress={() => updateSportSetting(sport, { teamFilter: opt.key })}
+                        >
+                          <Text style={[styles.chipText, setting?.teamFilter === opt.key && { color: '#fff' }]}>
+                            {opt.label}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                    {(setting?.teamFilter === 'my_team' || setting?.teamFilter === 'my_team_and_national_tv') && (
+                      <TeamPicker
                         sport={sport}
                         selectedTeams={setting?.favoriteTeams ?? []}
                         onSelect={(teams) => updateSportSetting(sport, { favoriteTeams: teams })}
@@ -215,8 +274,8 @@ export default function SettingsScreen() {
         </View>
 
         <Text style={styles.footer}>
-          Sports data from API-Sports.io{'\n'}
-          Set your API key in .env as EXPO_PUBLIC_API_SPORTS_KEY
+          Sports data from ESPN{'\n'}
+          Games update automatically
         </Text>
       </ScrollView>
     </SafeAreaView>
@@ -224,19 +283,19 @@ export default function SettingsScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#f8f8f8' },
-  header: { fontSize: 24, fontWeight: '700', padding: 20, paddingBottom: 8 },
-  sectionLabel: { fontSize: 12, fontWeight: '600', color: '#999', textTransform: 'uppercase', letterSpacing: 0.8, paddingHorizontal: 20, paddingTop: 20, paddingBottom: 6 },
-  section: { backgroundColor: '#fff', marginHorizontal: 16, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, borderColor: '#eee', overflow: 'hidden' },
-  row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, gap: 10 },
-  rowBorder: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#eee' },
-  sportEmoji: { fontSize: 18 },
-  rowLabel: { flex: 1, fontSize: 16, color: '#111' },
-  subSection: { paddingHorizontal: 16, paddingBottom: 12, backgroundColor: '#fafafa', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#eee' },
+  safe:            { flex: 1, backgroundColor: '#f8f8f8' },
+  header:          { fontSize: 24, fontWeight: '700', padding: 20, paddingBottom: 8 },
+  sectionLabel:    { fontSize: 12, fontWeight: '600', color: '#999', textTransform: 'uppercase', letterSpacing: 0.8, paddingHorizontal: 20, paddingTop: 20, paddingBottom: 6 },
+  section:         { backgroundColor: '#fff', marginHorizontal: 16, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, borderColor: '#eee', overflow: 'hidden' },
+  row:             { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, gap: 10 },
+  rowBorder:       { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#eee' },
+  sportEmoji:      { fontSize: 18 },
+  rowLabel:        { flex: 1, fontSize: 16, color: '#111' },
+  subSection:      { paddingHorizontal: 16, paddingBottom: 12, backgroundColor: '#fafafa', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#eee' },
   subSectionLabel: { fontSize: 12, color: '#999', marginBottom: 8 },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  chip: { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
-  chipSelected: { backgroundColor: '#378ADD', borderColor: '#378ADD' },
-  chipText: { fontSize: 12, color: '#555' },
-  footer: { textAlign: 'center', fontSize: 12, color: '#bbb', padding: 24, lineHeight: 18 },
+  chipRow:         { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  chip:            { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
+  chipSelected:    { backgroundColor: '#378ADD', borderColor: '#378ADD' },
+  chipText:        { fontSize: 12, color: '#555' },
+  footer:          { textAlign: 'center', fontSize: 12, color: '#bbb', padding: 24, lineHeight: 18 },
 });

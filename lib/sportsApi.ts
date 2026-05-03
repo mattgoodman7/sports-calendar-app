@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { addDays, endOfMonth, format, parseISO, startOfMonth } from 'date-fns';
-import { Sport, SportEvent } from './store';
+import { Sport, SportEvent, UserPreferences } from './store';
 
 const BASE = 'https://site.api.espn.com/apis/site/v2/sports';
 
@@ -9,7 +9,7 @@ const ESPN_PATHS: Record<Sport, string> = {
   nba:    'basketball/nba',
   mlb:    'baseball/mlb',
   nhl:    'hockey/nhl',
-  soccer: 'soccer/usa.1',
+  soccer: 'soccer',
   wnba:   'basketball/wnba',
   ncaafb: 'football/college-football',
   ncaamb: 'basketball/mens-college-basketball',
@@ -21,12 +21,18 @@ const ESPN_PATHS: Record<Sport, string> = {
   boxing: 'boxing/boxing',
 };
 
+// Extra params required per sport to get full game listings
+const EXTRA_PARAMS: Partial<Record<Sport, Record<string, any>>> = {
+  ncaafb: { groups: 80 },   // FBS (top tier college football)
+  ncaamb: { groups: 100 },  // All D1 college basketball
+};
+
 const GOLF_MAJORS = [
-  'masters', 'u.s. open', 'us open', 'the open', 'british open', 'pga championship'
+  'masters', 'u.s. open', 'us open', 'the open', 'british open', 'pga championship',
 ];
 
 const TENNIS_MAJORS = [
-  'australian open', 'french open', 'roland garros', 'wimbledon', 'us open'
+  'australian open', 'french open', 'roland garros', 'wimbledon', 'us open',
 ];
 
 function isMajorTournament(name: string, sport: Sport): boolean {
@@ -40,7 +46,7 @@ function normalizeEvent(raw: any, sport: Sport): SportEvent[] {
   const competitors = competition?.competitors ?? [];
   const home = competitors.find((c: any) => c.homeAway === 'home')?.team?.displayName ?? '';
   const away = competitors.find((c: any) => c.homeAway === 'away')?.team?.displayName ?? '';
-  const dateStr = (raw.date ?? '').slice(0, 10);
+  const dateStr = raw.date ? format(new Date(raw.date), 'yyyy-MM-dd') : '';
   const name = home && away
     ? `${away} @ ${home}`
     : (raw.name ?? raw.shortName ?? 'Event');
@@ -96,33 +102,98 @@ function normalizeEvent(raw: any, sport: Sport): SportEvent[] {
   }];
 }
 
-export async function fetchGamesForMonth(
+async function fetchLeague(
+  path: string,
   sport: Sport,
   year: number,
-  month: number
+  month: number,
+  extraParams: Record<string, any> = {}
 ): Promise<SportEvent[]> {
-  const path = ESPN_PATHS[sport];
   const from = format(startOfMonth(new Date(year, month)), 'yyyyMMdd');
   const to = format(endOfMonth(new Date(year, month)), 'yyyyMMdd');
-
+  const dateParam = extraParams.dates ?? `${from}-${to}`;
+  const { dates: _, ...otherParams } = extraParams;
   try {
     const response = await axios.get(`${BASE}/${path}/scoreboard`, {
-      params: { dates: `${from}-${to}`, limit: 200 },
+      params: { dates: dateParam, limit: 200, ...otherParams },
     });
     return (response.data?.events ?? []).flatMap((e: any) => normalizeEvent(e, sport));
   } catch (err) {
-    console.error(`Failed to fetch ${sport} games:`, err);
+    console.error(`Failed to fetch ${path}:`, err);
     return [];
   }
+}
+
+export async function fetchGamesForMonth(
+  sport: Sport,
+  year: number,
+  month: number,
+  preferences?: UserPreferences
+): Promise<SportEvent[]> {
+  if (sport === 'soccer') {
+    const setting = preferences?.sportSettings?.[sport];
+    const leagues = setting?.selectedSoccerLeagues?.length
+      ? setting.selectedSoccerLeagues
+      : ['usa.1'];
+
+    const results = await Promise.allSettled(
+      leagues.map((leagueId) => fetchLeague(`soccer/${leagueId}`, sport, year, month))
+    );
+
+    const seen = new Set<string>();
+    return results
+      .flatMap((r) => (r.status === 'fulfilled' ? r.value : []))
+      .filter((e) => {
+        if (seen.has(e.id)) return false;
+        seen.add(e.id);
+        return true;
+      });
+  }
+
+if (sport === 'ncaafb' || sport === 'ncaamb') {
+  const extraParams = EXTRA_PARAMS[sport] ?? {};
+  
+  // Fetch each Saturday of the month (college games are weekend-based)
+  const saturdays: Date[] = [];
+  const start = startOfMonth(new Date(year, month));
+  const end = endOfMonth(new Date(year, month));
+  let current = start;
+  while (current <= end) {
+    if (current.getDay() === 6) saturdays.push(new Date(current));
+    current = addDays(current, 1);
+  }
+
+  const results = await Promise.allSettled(
+    saturdays.map((saturday) =>
+      fetchLeague(ESPN_PATHS[sport], sport, year, month, {
+        ...extraParams,
+        dates: format(saturday, 'yyyyMMdd'),
+      })
+    )
+  );
+
+  const seen = new Set<string>();
+  return results
+    .flatMap((r) => (r.status === 'fulfilled' ? r.value : []))
+    .filter((e) => {
+      if (seen.has(e.id)) return false;
+      seen.add(e.id);
+      return true;
+    });
+}
+
+  const extraParams = EXTRA_PARAMS[sport] ?? {};
+  return fetchLeague(ESPN_PATHS[sport], sport, year, month, extraParams);
 }
 
 export async function fetchGamesForSports(
   sports: Sport[],
   year: number,
-  month: number
+  month: number,
+  preferences?: UserPreferences
 ): Promise<SportEvent[]> {
   const results = await Promise.allSettled(
-    sports.map((sport) => fetchGamesForMonth(sport, year, month))
+    sports.map((sport) => fetchGamesForMonth(sport, year, month, preferences))
   );
   return results
     .flatMap((r) => (r.status === 'fulfilled' ? r.value : []))

@@ -7,12 +7,12 @@ function applyFilters(events: SportEvent[], sportSettings: Record<string, any>):
     const setting = sportSettings[event.sport];
     if (!setting) return true;
 
-// Golf/Tennis — filter by majors
-      if (event.sport === 'golf' || event.sport === 'tennis') {
-        const filter = setting.tournamentFilter;
-        if (filter === 'majors') return event.isMajor === true;
-        return true;
-      }
+    // Golf/Tennis — filter by majors
+    if (event.sport === 'golf' || event.sport === 'tennis') {
+      const filter = setting.tournamentFilter;
+      if (filter === 'majors') return event.isMajor === true;
+      return true;
+    }
 
     // Team sports — filter by team/national TV
     const filter = setting.teamFilter;
@@ -24,8 +24,9 @@ function applyFilters(events: SportEvent[], sportSettings: Record<string, any>):
 
     if (filter === 'my_team') {
       const favTeams: string[] = (setting.favoriteTeams ?? []).map((t: any) => t.name);
+      const match = favTeams.some((name) => event.homeTeam === name || event.awayTeam === name);
       if (favTeams.length === 0) return true;
-      return favTeams.some((name) => event.homeTeam === name || event.awayTeam === name);
+      return match;
     }
 
     if (filter === 'my_team_and_national_tv') {
@@ -45,10 +46,11 @@ export function useGames(year: number, month: number) {
   const sports = useAppStore((s) => s.preferences.sports);
   const sportSettings = useAppStore((s) => s.preferences.sportSettings);
   const customEvents = useAppStore((s) => s.customEvents);
+  const preferences = useAppStore((s) => s.preferences);
 
   const query = useQuery({
-    queryKey: ['games', sports, year, month],
-    queryFn: () => fetchGamesForSports(sports, year, month),
+    queryKey: ['games', sports, year, month, preferences.sportSettings?.soccer?.selectedSoccerLeagues],
+    queryFn: () => fetchGamesForSports(sports, year, month, preferences),
     staleTime: 1000 * 60 * 60,
     enabled: sports.length > 0,
   });

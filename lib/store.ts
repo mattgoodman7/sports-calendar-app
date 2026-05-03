@@ -21,6 +21,22 @@ export type TeamSportFilter = 'all' | 'national_tv' | 'my_team' | 'my_team_and_n
 export type TournamentSportFilter = 'majors' | 'all' | 'custom';
 export type CombatSportFilter = 'title_fights' | 'main_events' | 'all';
 
+// All supported soccer league slugs (ESPN API identifiers)
+export const SOCCER_LEAGUES: { id: string; label: string }[] = [
+  { id: 'usa.1',           label: 'MLS' },
+  { id: 'eng.1',           label: 'Premier League' },
+  { id: 'esp.1',           label: 'La Liga' },
+  { id: 'ger.1',           label: 'Bundesliga' },
+  { id: 'fra.1',           label: 'Ligue 1' },
+  { id: 'uefa.champions',  label: 'Champions League' },
+  { id: 'uefa.europa',     label: 'Europa League' },
+  { id: 'fifa.world',      label: 'World Cup' },
+  { id: 'fifa.wwc',        label: "Women's World Cup" },
+  { id: 'conmebol.america',label: 'Copa America' },
+  { id: 'uefa.euro',       label: 'European Championships' },
+  { id: 'concacaf.gold',   label: 'Gold Cup' },
+];
+
 export interface SportSetting {
   sport: Sport;
   // Team sports
@@ -31,6 +47,8 @@ export interface SportSetting {
   selectedTournaments?: Tournament[];
   // Combat sports
   combatFilter?: CombatSportFilter;
+  // Soccer
+  selectedSoccerLeagues?: string[];
 }
 
 export interface SportEvent {
@@ -97,12 +115,18 @@ export const useAppStore = create<AppState>()(
           const sports = state.preferences.sports.includes(sport)
             ? state.preferences.sports.filter((s) => s !== sport)
             : [...state.preferences.sports, sport];
-          // Add default setting when sport is added
           const sportSettings = { ...state.preferences.sportSettings };
           if (!sports.includes(sport)) {
             delete sportSettings[sport];
           } else if (!sportSettings[sport]) {
-            sportSettings[sport] = { sport, teamFilter: 'all', tournamentFilter: 'majors', combatFilter: 'main_events' };
+            sportSettings[sport] = {
+              sport,
+              teamFilter: 'all',
+              tournamentFilter: 'majors',
+              combatFilter: 'main_events',
+              // Default soccer to MLS only
+              selectedSoccerLeagues: sport === 'soccer' ? ['usa.1'] : undefined,
+            };
           }
           return { preferences: { ...state.preferences, sports, sportSettings } };
         }),

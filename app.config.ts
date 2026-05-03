@@ -16,6 +16,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       backgroundColor: '#0a0a0a',
     },
     package: 'com.yourname.slate',
+    softwareKeyboardLayoutMode: 'pan',
   },
   plugins: [
     'expo-router',
