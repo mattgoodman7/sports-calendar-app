@@ -268,22 +268,23 @@ function DisplayEventBlock({ pd, totalWidth }: { pd: PositionedDisplay; totalWid
   const sport  = pd.display.isGroup ? pd.display.sport : pd.display.event.sport;
   const color  = SPORT_COLORS[sport];
 
-  if (pd.display.isGroup) {
-    const group = pd.display as GroupedEvent;
-    return (
-      <View style={[styles.eventBlock, { top, height, left, width, backgroundColor: color }]}>
-        <Text style={styles.eventBlockTime}>{group.time}</Text>
-        <Text style={styles.eventBlockGroupLabel}>NFL Games</Text>
-        <View style={styles.groupList}>
-          {group.games.map((g) => (
-            <Text key={g.id} style={styles.groupItem} numberOfLines={1}>
-              · {g.name}
-            </Text>
-          ))}
-        </View>
+if (pd.display.isGroup) {
+  const group = pd.display as GroupedEvent;
+
+  return (
+    <View style={[styles.eventBlock, { top, height, left, width, backgroundColor: color }]}>
+      <Text style={styles.eventBlockTime}>{group.time}</Text>
+      <Text style={styles.eventBlockGroupLabel}>NFL Games</Text>
+      <View style={styles.groupList}>
+        {group.games.map((g) => (
+          <Text key={g.id} style={styles.groupItem}>
+            · {g.name}{g.time || g.channel ? `  ${[g.time, g.channel].filter(Boolean).join(' · ')}` : ''}
+          </Text>
+        ))}
       </View>
-    );
-  }
+    </View>
+  );
+}
 
   const e = pd.display.event;
   return (
@@ -569,9 +570,8 @@ const styles = StyleSheet.create({
   eventBlockTime:     { fontSize: 10, color: 'rgba(255,255,255,0.85)', marginTop: 2 },
   eventBlockChannel:  { fontSize: 10, color: 'rgba(255,255,255,0.7)', marginTop: 1 },
   eventBlockGroupLabel: { fontSize: 11, color: '#fff', fontWeight: '700', marginTop: 2, marginBottom: 3 },
-  groupList:          { gap: 2 },
-  groupItem:          { fontSize: 9, color: 'rgba(255,255,255,0.9)', lineHeight: 13 },
-
+  groupList:      { gap: 2 },
+  groupItem: { fontSize: 9, color: 'rgba(255,255,255,0.9)', lineHeight: 13, flexWrap: 'wrap' },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
   modal:         { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24, paddingBottom: 40 },
   modalTitle:    { fontSize: 18, fontWeight: '600', marginBottom: 16 },

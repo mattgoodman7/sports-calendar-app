@@ -1,5 +1,8 @@
 import { router, useLocalSearchParams } from 'expo-router';
+import { useRef } from 'react';
 import {
+  KeyboardAvoidingView,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -91,6 +94,7 @@ export default function SportSettingsScreen() {
   const { preferences, updateSportSetting } = useAppStore();
   const setting = (preferences.sportSettings ?? {})[sport];
   const color = SPORT_COLORS[sport] ?? '#378ADD';
+  const scrollRef = useRef<ScrollView>(null);
 
   const showMyTeams =
     setting?.teamFilter === 'my_team' ||
@@ -124,179 +128,190 @@ export default function SportSettingsScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1 }}
+      >
+        <ScrollView
+          ref={scrollRef}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: 100 }]}
+          keyboardShouldPersistTaps="handled"
+        >
 
-        {/* ── Header ── */}
-        <View style={styles.headerRow}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-            <Text style={styles.backArrow}>‹</Text>
-          </TouchableOpacity>
-          <Text style={styles.sportEmoji}>{SPORT_EMOJIS[sport]}</Text>
-          <Text style={styles.header}>{SPORT_LABELS[sport]}</Text>
-        </View>
+          {/* ── Header ── */}
+          <View style={styles.headerRow}>
+            <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+              <Text style={styles.backArrow}>‹</Text>
+            </TouchableOpacity>
+            <Text style={styles.sportEmoji}>{SPORT_EMOJIS[sport]}</Text>
+            <Text style={styles.header}>{SPORT_LABELS[sport]}</Text>
+          </View>
 
-        {/* ── Soccer: League picker ── */}
-        {sport === 'soccer' && (
-          <>
-            <Text style={styles.sectionLabel}>Leagues</Text>
-            <View style={styles.section}>
-              {SOCCER_LEAGUES.map((league, i) => {
-                const isSelected = selectedLeagues.includes(league.id);
-                const isLast = i === SOCCER_LEAGUES.length - 1;
-                return (
-                  <TouchableOpacity
-                    key={league.id}
-                    style={[styles.optionRow, !isLast && styles.rowBorder]}
-                    onPress={() => toggleSoccerLeague(league.id)}
-                  >
-                    <Text style={styles.optionLabel}>{league.label}</Text>
-                    {isSelected && (
-                      <View style={[styles.checkCircle, { backgroundColor: color }]}>
-                        <Text style={styles.checkMark}>✓</Text>
+          {/* ── Soccer: League picker ── */}
+          {sport === 'soccer' && (
+            <>
+              <Text style={styles.sectionLabel}>Leagues</Text>
+              <View style={styles.section}>
+                {SOCCER_LEAGUES.map((league, i) => {
+                  const isSelected = selectedLeagues.includes(league.id);
+                  const isLast = i === SOCCER_LEAGUES.length - 1;
+                  return (
+                    <TouchableOpacity
+                      key={league.id}
+                      style={[styles.optionRow, !isLast && styles.rowBorder]}
+                      onPress={() => toggleSoccerLeague(league.id)}
+                    >
+                      <Text style={styles.optionLabel}>{league.label}</Text>
+                      {isSelected && (
+                        <View style={[styles.checkCircle, { backgroundColor: color }]}>
+                          <Text style={styles.checkMark}>✓</Text>
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </>
+          )}
+
+          {/* ── Team sports: Filter ── */}
+          {TEAM_SPORTS.includes(sport) && (
+            <>
+              <Text style={styles.sectionLabel}>Show</Text>
+              <View style={styles.section}>
+                {(COLLEGE_SPORTS.includes(sport) ? COLLEGE_FILTER_OPTIONS : TEAM_FILTER_OPTIONS).map((opt, i, arr) => {
+                  const isSelected = setting?.teamFilter === opt.key;
+                  const isLast = i === arr.length - 1;
+                  return (
+                    <TouchableOpacity
+                      key={opt.key}
+                      style={[styles.optionRow, !isLast && styles.rowBorder]}
+                      onPress={() => updateSportSetting(sport, { teamFilter: opt.key })}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.optionLabel, isSelected && { color }]}>{opt.label}</Text>
+                        <Text style={styles.optionDescription}>{opt.description}</Text>
                       </View>
-                    )}
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </>
-        )}
+                      {isSelected && (
+                        <View style={[styles.checkCircle, { backgroundColor: color }]}>
+                          <Text style={styles.checkMark}>✓</Text>
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </>
+          )}
 
-        {/* ── Team sports: Filter ── */}
-        {TEAM_SPORTS.includes(sport) && (
-          <>
-            <Text style={styles.sectionLabel}>Show</Text>
-            <View style={styles.section}>
-              {(COLLEGE_SPORTS.includes(sport) ? COLLEGE_FILTER_OPTIONS : TEAM_FILTER_OPTIONS).map((opt, i, arr) => {
-                const isSelected = setting?.teamFilter === opt.key;
-                const isLast = i === arr.length - 1;
-                return (
-                  <TouchableOpacity
-                    key={opt.key}
-                    style={[styles.optionRow, !isLast && styles.rowBorder]}
-                    onPress={() => updateSportSetting(sport, { teamFilter: opt.key })}
-                  >
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.optionLabel, isSelected && { color }]}>{opt.label}</Text>
-                      <Text style={styles.optionDescription}>{opt.description}</Text>
-                    </View>
-                    {isSelected && (
-                      <View style={[styles.checkCircle, { backgroundColor: color }]}>
-                        <Text style={styles.checkMark}>✓</Text>
-                      </View>
-                    )}
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </>
-        )}
+          {/* ── Soccer: Per-league team pickers ── */}
+          {sport === 'soccer' && showMyTeams && (
+            <>
+              <Text style={styles.sectionLabel}>My Teams</Text>
+              {SOCCER_LEAGUES.filter((l) => selectedLeagues.includes(l.id)).map((league) => (
+                <View key={league.id} style={styles.teamPickerWrapper}>
+                  <TeamPicker
+                    sport="soccer"
+                    leagueId={league.id}
+                    leagueLabel={league.label}
+                    selectedTeams={(setting?.myTeamsByLeague ?? {})[league.id] ?? []}
+                    onSelect={(teams) => updateSoccerLeagueTeams(league.id, teams)}
+                    scrollRef={scrollRef}
+                  />
+                </View>
+              ))}
+            </>
+          )}
 
-        {/* ── Soccer: Per-league team pickers ── */}
-        {sport === 'soccer' && showMyTeams && (
-          <>
-            <Text style={styles.sectionLabel}>My Teams</Text>
-            {SOCCER_LEAGUES.filter((l) => selectedLeagues.includes(l.id)).map((league) => (
-              <View key={league.id} style={styles.teamPickerWrapper}>
+          {/* ── Non-soccer team sports: single team picker ── */}
+          {TEAM_SPORTS.includes(sport) && sport !== 'soccer' && showMyTeams && (
+            <>
+              <Text style={styles.sectionLabel}>My Teams</Text>
+              <View style={styles.teamPickerWrapper}>
                 <TeamPicker
-                  sport="soccer"
-                  leagueId={league.id}
-                  leagueLabel={league.label}
-                  selectedTeams={(setting?.myTeamsByLeague ?? {})[league.id] ?? []}
-                  onSelect={(teams) => updateSoccerLeagueTeams(league.id, teams)}
+                  sport={sport}
+                  selectedTeams={setting?.myTeams ?? []}
+                  onSelect={(teams) => updateSportSetting(sport, { myTeams: teams })}
+                  scrollRef={scrollRef}
                 />
               </View>
-            ))}
-          </>
-        )}
+            </>
+          )}
 
-        {/* ── Non-soccer team sports: single team picker ── */}
-        {TEAM_SPORTS.includes(sport) && sport !== 'soccer' && showMyTeams && (
-          <>
-            <Text style={styles.sectionLabel}>My Teams</Text>
-            <View style={styles.teamPickerWrapper}>
-              <TeamPicker
-                sport={sport}
-                selectedTeams={setting?.myTeams ?? []}
-                onSelect={(teams) => updateSportSetting(sport, { myTeams: teams })}
-              />
-            </View>
-          </>
-        )}
-
-        {/* ── Tournament sports ── */}
-        {TOURNAMENT_SPORTS.includes(sport) && (
-          <>
-            <Text style={styles.sectionLabel}>Show</Text>
-            <View style={styles.section}>
-              {TOURNAMENT_FILTER_OPTIONS.map((opt, i, arr) => {
-                const isSelected = setting?.tournamentFilter === opt.key;
-                const isLast = i === arr.length - 1;
-                return (
-                  <TouchableOpacity
-                    key={opt.key}
-                    style={[styles.optionRow, !isLast && styles.rowBorder]}
-                    onPress={() => updateSportSetting(sport, { tournamentFilter: opt.key })}
-                  >
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.optionLabel, isSelected && { color }]}>{opt.label}</Text>
-                      <Text style={styles.optionDescription}>{opt.description}</Text>
-                    </View>
-                    {isSelected && (
-                      <View style={[styles.checkCircle, { backgroundColor: color }]}>
-                        <Text style={styles.checkMark}>✓</Text>
+          {/* ── Tournament sports ── */}
+          {TOURNAMENT_SPORTS.includes(sport) && (
+            <>
+              <Text style={styles.sectionLabel}>Show</Text>
+              <View style={styles.section}>
+                {TOURNAMENT_FILTER_OPTIONS.map((opt, i, arr) => {
+                  const isSelected = setting?.tournamentFilter === opt.key;
+                  const isLast = i === arr.length - 1;
+                  return (
+                    <TouchableOpacity
+                      key={opt.key}
+                      style={[styles.optionRow, !isLast && styles.rowBorder]}
+                      onPress={() => updateSportSetting(sport, { tournamentFilter: opt.key })}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.optionLabel, isSelected && { color }]}>{opt.label}</Text>
+                        <Text style={styles.optionDescription}>{opt.description}</Text>
                       </View>
-                    )}
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </>
-        )}
-
-        {/* ── Motor sports ── */}
-        {MOTOR_SPORTS.includes(sport) && (
-          <>
-            <Text style={styles.sectionLabel}>Coverage</Text>
-            <View style={styles.section}>
-              <View style={styles.optionRow}>
-                <Text style={styles.optionLabel}>All races included automatically</Text>
+                      {isSelected && (
+                        <View style={[styles.checkCircle, { backgroundColor: color }]}>
+                          <Text style={styles.checkMark}>✓</Text>
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
-            </View>
-          </>
-        )}
+            </>
+          )}
 
-        {/* ── Combat sports ── */}
-        {COMBAT_SPORTS.includes(sport) && (
-          <>
-            <Text style={styles.sectionLabel}>Show</Text>
-            <View style={styles.section}>
-              {COMBAT_FILTER_OPTIONS.map((opt, i, arr) => {
-                const isSelected = setting?.combatFilter === opt.key;
-                const isLast = i === arr.length - 1;
-                return (
-                  <TouchableOpacity
-                    key={opt.key}
-                    style={[styles.optionRow, !isLast && styles.rowBorder]}
-                    onPress={() => updateSportSetting(sport, { combatFilter: opt.key })}
-                  >
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.optionLabel, isSelected && { color }]}>{opt.label}</Text>
-                      <Text style={styles.optionDescription}>{opt.description}</Text>
-                    </View>
-                    {isSelected && (
-                      <View style={[styles.checkCircle, { backgroundColor: color }]}>
-                        <Text style={styles.checkMark}>✓</Text>
+          {/* ── Motor sports ── */}
+          {MOTOR_SPORTS.includes(sport) && (
+            <>
+              <Text style={styles.sectionLabel}>Coverage</Text>
+              <View style={styles.section}>
+                <View style={styles.optionRow}>
+                  <Text style={styles.optionLabel}>All races included automatically</Text>
+                </View>
+              </View>
+            </>
+          )}
+
+          {/* ── Combat sports ── */}
+          {COMBAT_SPORTS.includes(sport) && (
+            <>
+              <Text style={styles.sectionLabel}>Show</Text>
+              <View style={styles.section}>
+                {COMBAT_FILTER_OPTIONS.map((opt, i, arr) => {
+                  const isSelected = setting?.combatFilter === opt.key;
+                  const isLast = i === arr.length - 1;
+                  return (
+                    <TouchableOpacity
+                      key={opt.key}
+                      style={[styles.optionRow, !isLast && styles.rowBorder]}
+                      onPress={() => updateSportSetting(sport, { combatFilter: opt.key })}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.optionLabel, isSelected && { color }]}>{opt.label}</Text>
+                        <Text style={styles.optionDescription}>{opt.description}</Text>
                       </View>
-                    )}
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </>
-        )}
+                      {isSelected && (
+                        <View style={[styles.checkCircle, { backgroundColor: color }]}>
+                          <Text style={styles.checkMark}>✓</Text>
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </>
+          )}
 
-      </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -308,27 +323,22 @@ const styles = StyleSheet.create({
   scrollContent:     { paddingBottom: 48 },
   error:             { padding: 24, fontSize: 16, color: '#999' },
 
-  // Header
   headerRow:         { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8, gap: 8 },
   backBtn:           { paddingRight: 4 },
   backArrow:         { fontSize: 32, color: '#378ADD', lineHeight: 36 },
   sportEmoji:        { fontSize: 28 },
   header:            { fontSize: 26, fontWeight: '700', color: '#111' },
 
-  // Section
   sectionLabel:      { fontSize: 12, fontWeight: '600', color: '#999', textTransform: 'uppercase', letterSpacing: 0.8, paddingHorizontal: 20, paddingTop: 20, paddingBottom: 6 },
   section:           { backgroundColor: '#fff', marginHorizontal: 16, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, borderColor: '#eee', overflow: 'hidden' },
 
-  // Option rows
   optionRow:         { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, gap: 12 },
   rowBorder:         { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#eee' },
   optionLabel:       { fontSize: 16, color: '#111', fontWeight: '500' },
   optionDescription: { fontSize: 13, color: '#999', marginTop: 2 },
 
-  // Check indicator
   checkCircle:       { width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   checkMark:         { color: '#fff', fontSize: 13, fontWeight: '700' },
 
-  // Team picker
   teamPickerWrapper: { marginHorizontal: 16, marginBottom: 8 },
 });

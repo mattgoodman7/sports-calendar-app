@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   ScrollView,
@@ -23,10 +23,11 @@ const ESPN_PATHS: Partial<Record<Sport, string>> = {
 
 interface Props {
   sport: Sport;
-  leagueId?: string;      // for soccer — e.g. 'eng.1', 'usa.1'
-  leagueLabel?: string;   // displayed as section header
+  leagueId?: string;
+  leagueLabel?: string;
   selectedTeams?: Team[];
   onSelect: (teams: Team[]) => void;
+  scrollRef?: React.RefObject<ScrollView>;
 }
 
 export default function TeamPicker({
@@ -35,6 +36,7 @@ export default function TeamPicker({
   leagueLabel,
   selectedTeams = [],
   onSelect,
+  scrollRef,
 }: Props) {
   const [teams, setTeams] = useState<Team[]>([]);
   const [filtered, setFiltered] = useState<Team[]>([]);
@@ -48,7 +50,6 @@ export default function TeamPicker({
   }, [expanded]);
 
   const fetchTeams = async () => {
-    // Soccer: use leagueId to build path; other sports: use ESPN_PATHS
     let path: string | undefined;
     if (sport === 'soccer' && leagueId) {
       path = `soccer/${leagueId}`;
@@ -98,14 +99,27 @@ export default function TeamPicker({
     onSelect(updated);
   };
 
+const containerRef = useRef<View>(null);
+
+const handleFocus = () => {
+  if (!scrollRef?.current || !containerRef.current) return;
+  setTimeout(() => {
+    containerRef.current?.measureLayout(
+      scrollRef.current as any,
+      (x, y) => {
+        scrollRef.current?.scrollTo({ y: y, animated: true });
+      },
+      () => {}
+    );
+  }, 150);
+};
+
   return (
-    <View style={styles.container}>
-      {/* Optional league label */}
+    <View ref={containerRef} style={styles.container}>
       {leagueLabel && (
         <Text style={styles.leagueLabel}>{leagueLabel}</Text>
       )}
 
-      {/* Selected team bubbles */}
       {selectedTeams.length > 0 && (
         <View style={styles.bubbleRow}>
           {selectedTeams.map((t) => (
@@ -120,7 +134,6 @@ export default function TeamPicker({
         </View>
       )}
 
-      {/* Expand/collapse toggle */}
       <TouchableOpacity
         style={styles.toggleBtn}
         onPress={() => setExpanded((v) => !v)}
@@ -133,7 +146,6 @@ export default function TeamPicker({
         </Text>
       </TouchableOpacity>
 
-      {/* Inline search + list */}
       {expanded && (
         <View style={styles.searchContainer}>
           <TextInput
@@ -142,6 +154,7 @@ export default function TeamPicker({
             value={search}
             onChangeText={handleSearch}
             returnKeyType="search"
+            onFocus={handleFocus}
           />
           {loading ? (
             <View style={styles.center}>
