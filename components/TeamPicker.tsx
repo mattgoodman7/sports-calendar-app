@@ -16,7 +16,6 @@ const ESPN_PATHS: Partial<Record<Sport, string>> = {
   nba:    'basketball/nba',
   mlb:    'baseball/mlb',
   nhl:    'hockey/nhl',
-  soccer: 'soccer/usa.1',
   wnba:   'basketball/wnba',
   ncaafb: 'football/college-football',
   ncaamb: 'basketball/mens-college-basketball',
@@ -24,11 +23,19 @@ const ESPN_PATHS: Partial<Record<Sport, string>> = {
 
 interface Props {
   sport: Sport;
+  leagueId?: string;      // for soccer — e.g. 'eng.1', 'usa.1'
+  leagueLabel?: string;   // displayed as section header
   selectedTeams?: Team[];
   onSelect: (teams: Team[]) => void;
 }
 
-export default function TeamPicker({ sport, selectedTeams = [], onSelect }: Props) {
+export default function TeamPicker({
+  sport,
+  leagueId,
+  leagueLabel,
+  selectedTeams = [],
+  onSelect,
+}: Props) {
   const [teams, setTeams] = useState<Team[]>([]);
   const [filtered, setFiltered] = useState<Team[]>([]);
   const [search, setSearch] = useState('');
@@ -41,7 +48,14 @@ export default function TeamPicker({ sport, selectedTeams = [], onSelect }: Prop
   }, [expanded]);
 
   const fetchTeams = async () => {
-    const path = ESPN_PATHS[sport];
+    // Soccer: use leagueId to build path; other sports: use ESPN_PATHS
+    let path: string | undefined;
+    if (sport === 'soccer' && leagueId) {
+      path = `soccer/${leagueId}`;
+    } else {
+      path = ESPN_PATHS[sport];
+    }
+
     if (!path) {
       setError('Team selection not available for this sport yet.');
       return;
@@ -86,6 +100,11 @@ export default function TeamPicker({ sport, selectedTeams = [], onSelect }: Prop
 
   return (
     <View style={styles.container}>
+      {/* Optional league label */}
+      {leagueLabel && (
+        <Text style={styles.leagueLabel}>{leagueLabel}</Text>
+      )}
+
       {/* Selected team bubbles */}
       {selectedTeams.length > 0 && (
         <View style={styles.bubbleRow}>
@@ -164,14 +183,15 @@ export default function TeamPicker({ sport, selectedTeams = [], onSelect }: Prop
 
 const styles = StyleSheet.create({
   container:       { marginTop: 8, marginBottom: 4 },
+  leagueLabel:     { fontSize: 13, fontWeight: '600', color: '#555', marginBottom: 6 },
   bubbleRow:       { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 },
   bubble:          { backgroundColor: '#378ADD', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5 },
   bubbleText:      { color: '#fff', fontSize: 12, fontWeight: '500' },
-  toggleBtn: { alignSelf: 'flex-start', paddingVertical: 6, paddingHorizontal: 12, borderWidth: 1, borderColor: '#378ADD', borderRadius: 8, flexDirection: 'row', alignItems: 'center' },
+  toggleBtn:       { alignSelf: 'flex-start', paddingVertical: 6, paddingHorizontal: 12, borderWidth: 1, borderColor: '#378ADD', borderRadius: 8, flexDirection: 'row', alignItems: 'center' },
   toggleBtnText:   { fontSize: 13, color: '#378ADD', fontWeight: '500' },
-  toggleBtnArrow: { fontSize: 20, color: '#378ADD', fontWeight: '700' },
+  toggleBtnArrow:  { fontSize: 20, color: '#378ADD', fontWeight: '700' },
   searchContainer: { marginTop: 10, borderWidth: 1.5, borderColor: '#378ADD', borderRadius: 10, overflow: 'hidden' },
-  search: { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, margin: 8, padding: 12, fontSize: 15, backgroundColor: '#fff' },
+  search:          { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, margin: 8, padding: 12, fontSize: 15, backgroundColor: '#fff' },
   center:          { alignItems: 'center', paddingVertical: 20 },
   loadingText:     { marginTop: 8, color: '#999', fontSize: 13 },
   errorText:       { color: '#e24b4a', fontSize: 14, textAlign: 'center' },

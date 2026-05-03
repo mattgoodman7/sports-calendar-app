@@ -78,6 +78,14 @@ export default function Onboarding() {
     updateSportSetting('soccer', { selectedSoccerLeagues: updated });
   };
 
+  const updateSoccerLeagueTeams = (leagueId: string, teams: any[]) => {
+    const setting = (preferences.sportSettings ?? {})['soccer'];
+    const current = setting?.myTeamsByLeague ?? {};
+    updateSportSetting('soccer', {
+      myTeamsByLeague: { ...current, [leagueId]: teams },
+    });
+  };
+
   return (
     <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
       <Text style={styles.title}>Your Sports Calendar</Text>
@@ -90,6 +98,10 @@ export default function Onboarding() {
       {SPORTS.map((sport) => {
         const selected = preferences.sports.includes(sport.key);
         const setting  = (preferences.sportSettings ?? {})[sport.key];
+        const showMyTeams =
+          setting?.teamFilter === 'my_team' ||
+          setting?.teamFilter === 'my_team_and_national_tv';
+        const selectedLeagues = setting?.selectedSoccerLeagues ?? ['usa.1'];
 
         return (
           <View key={sport.key} style={styles.sportBlock}>
@@ -107,18 +119,18 @@ export default function Onboarding() {
             {selected && (
               <View style={[styles.sportSettings, { borderColor: sport.color }]}>
 
-                {/* Soccer — league picker + team filter */}
+                {/* Soccer — league picker + team filter + per-league team pickers */}
                 {sport.key === 'soccer' && (
                   <>
                     <Text style={styles.settingLabel}>Leagues</Text>
                     <View style={styles.chipRow}>
                       {SOCCER_LEAGUES.map((league) => {
-                        const isSelected = (setting?.selectedSoccerLeagues ?? ['usa.1']).includes(league.id);
+                        const isSelected = selectedLeagues.includes(league.id);
                         return (
                           <TouchableOpacity
                             key={league.id}
                             style={[styles.chip, isSelected && { backgroundColor: sport.color, borderColor: sport.color }]}
-                            onPress={() => toggleSoccerLeague(league.id, setting?.selectedSoccerLeagues ?? ['usa.1'])}
+                            onPress={() => toggleSoccerLeague(league.id, selectedLeagues)}
                           >
                             <Text style={[styles.chipText, isSelected && { color: '#fff' }]}>
                               {league.label}
@@ -141,13 +153,16 @@ export default function Onboarding() {
                         </TouchableOpacity>
                       ))}
                     </View>
-                    {(setting?.teamFilter === 'my_team' || setting?.teamFilter === 'my_team_and_national_tv') && (
+                    {showMyTeams && SOCCER_LEAGUES.filter((l) => selectedLeagues.includes(l.id)).map((league) => (
                       <TeamPicker
-                        sport={sport.key}
-                        selectedTeams={setting?.favoriteTeams ?? []}
-                        onSelect={(teams) => updateSportSetting(sport.key, { favoriteTeams: teams })}
+                        key={league.id}
+                        sport="soccer"
+                        leagueId={league.id}
+                        leagueLabel={league.label}
+                        selectedTeams={(setting?.myTeamsByLeague ?? {})[league.id] ?? []}
+                        onSelect={(teams) => updateSoccerLeagueTeams(league.id, teams)}
                       />
-                    )}
+                    ))}
                   </>
                 )}
 
@@ -168,11 +183,11 @@ export default function Onboarding() {
                         </TouchableOpacity>
                       ))}
                     </View>
-                    {(setting?.teamFilter === 'my_team' || setting?.teamFilter === 'my_team_and_national_tv') && (
+                    {showMyTeams && (
                       <TeamPicker
                         sport={sport.key}
-                        selectedTeams={setting?.favoriteTeams ?? []}
-                        onSelect={(teams) => updateSportSetting(sport.key, { favoriteTeams: teams })}
+                        selectedTeams={setting?.myTeams ?? []}
+                        onSelect={(teams) => updateSportSetting(sport.key, { myTeams: teams })}
                       />
                     )}
                   </>

@@ -12,6 +12,7 @@ import {
   CombatSportFilter,
   SOCCER_LEAGUES,
   Sport,
+  Team,
   TeamSportFilter,
   TournamentSportFilter,
   useAppStore,
@@ -59,27 +60,27 @@ const COMBAT_SPORTS: Sport[]     = ['mma', 'boxing'];
 const COLLEGE_SPORTS: Sport[]    = ['ncaafb', 'ncaamb'];
 
 const TEAM_FILTER_OPTIONS: { key: TeamSportFilter; label: string; description: string }[] = [
-  { key: 'all',                     label: 'All games',              description: 'Show every game' },
-  { key: 'national_tv',             label: 'National TV only',       description: 'Only games on national broadcast' },
-  { key: 'my_team',                 label: 'My team only',           description: 'Only games featuring your teams' },
-  { key: 'my_team_and_national_tv', label: 'My team + National TV',  description: 'Your teams plus national broadcasts' },
+  { key: 'all',                     label: 'All games',             description: 'Show every game' },
+  { key: 'national_tv',             label: 'National TV only',      description: 'Only games on national broadcast' },
+  { key: 'my_team',                 label: 'My team only',          description: 'Only games featuring your teams' },
+  { key: 'my_team_and_national_tv', label: 'My team + National TV', description: 'Your teams plus national broadcasts' },
 ];
 
 const COLLEGE_FILTER_OPTIONS: { key: TeamSportFilter; label: string; description: string }[] = [
-  { key: 'national_tv',             label: 'National TV only',       description: 'Only games on national broadcast' },
-  { key: 'my_team',                 label: 'My team only',           description: 'Only games featuring your teams' },
-  { key: 'my_team_and_national_tv', label: 'My team + National TV',  description: 'Your teams plus national broadcasts' },
+  { key: 'national_tv',             label: 'National TV only',      description: 'Only games on national broadcast' },
+  { key: 'my_team',                 label: 'My team only',          description: 'Only games featuring your teams' },
+  { key: 'my_team_and_national_tv', label: 'My team + National TV', description: 'Your teams plus national broadcasts' },
 ];
 
 const TOURNAMENT_FILTER_OPTIONS: { key: TournamentSportFilter; label: string; description: string }[] = [
-  { key: 'majors', label: 'Majors only',      description: 'Only the biggest tournaments' },
-  { key: 'all',    label: 'All tournaments',  description: 'Every tournament on the schedule' },
+  { key: 'majors', label: 'Majors only',     description: 'Only the biggest tournaments' },
+  { key: 'all',    label: 'All tournaments', description: 'Every tournament on the schedule' },
 ];
 
 const COMBAT_FILTER_OPTIONS: { key: CombatSportFilter; label: string; description: string }[] = [
   { key: 'title_fights', label: 'Title fights only', description: 'Championship bouts only' },
   { key: 'main_events',  label: 'Main events',       description: 'Headlining fights' },
-  { key: 'all',          label: 'All fights',         description: 'Every scheduled bout' },
+  { key: 'all',          label: 'All fights',        description: 'Every scheduled bout' },
 ];
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
@@ -91,6 +92,10 @@ export default function SportSettingsScreen() {
   const setting = (preferences.sportSettings ?? {})[sport];
   const color = SPORT_COLORS[sport] ?? '#378ADD';
 
+  const showMyTeams =
+    setting?.teamFilter === 'my_team' ||
+    setting?.teamFilter === 'my_team_and_national_tv';
+
   const toggleSoccerLeague = (leagueId: string) => {
     const current = setting?.selectedSoccerLeagues ?? ['usa.1'];
     const updated = current.includes(leagueId)
@@ -100,6 +105,13 @@ export default function SportSettingsScreen() {
     updateSportSetting(sport, { selectedSoccerLeagues: updated });
   };
 
+  const updateSoccerLeagueTeams = (leagueId: string, teams: Team[]) => {
+    const current = setting?.myTeamsByLeague ?? {};
+    updateSportSetting(sport, {
+      myTeamsByLeague: { ...current, [leagueId]: teams },
+    });
+  };
+
   if (!sport || !SPORT_LABELS[sport]) {
     return (
       <SafeAreaView style={styles.safe}>
@@ -107,6 +119,8 @@ export default function SportSettingsScreen() {
       </SafeAreaView>
     );
   }
+
+  const selectedLeagues = setting?.selectedSoccerLeagues ?? ['usa.1'];
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -127,7 +141,7 @@ export default function SportSettingsScreen() {
             <Text style={styles.sectionLabel}>Leagues</Text>
             <View style={styles.section}>
               {SOCCER_LEAGUES.map((league, i) => {
-                const isSelected = (setting?.selectedSoccerLeagues ?? ['usa.1']).includes(league.id);
+                const isSelected = selectedLeagues.includes(league.id);
                 const isLast = i === SOCCER_LEAGUES.length - 1;
                 return (
                   <TouchableOpacity
@@ -148,7 +162,7 @@ export default function SportSettingsScreen() {
           </>
         )}
 
-        {/* ── Team sports: Filter + Team picker ── */}
+        {/* ── Team sports: Filter ── */}
         {TEAM_SPORTS.includes(sport) && (
           <>
             <Text style={styles.sectionLabel}>Show</Text>
@@ -175,19 +189,38 @@ export default function SportSettingsScreen() {
                 );
               })}
             </View>
+          </>
+        )}
 
-            {(setting?.teamFilter === 'my_team' || setting?.teamFilter === 'my_team_and_national_tv') && (
-              <>
-                <Text style={styles.sectionLabel}>My Teams</Text>
-                <View style={styles.teamPickerWrapper}>
-                  <TeamPicker
-                    sport={sport}
-                    selectedTeams={setting?.favoriteTeams ?? []}
-                    onSelect={(teams) => updateSportSetting(sport, { favoriteTeams: teams })}
-                  />
-                </View>
-              </>
-            )}
+        {/* ── Soccer: Per-league team pickers ── */}
+        {sport === 'soccer' && showMyTeams && (
+          <>
+            <Text style={styles.sectionLabel}>My Teams</Text>
+            {SOCCER_LEAGUES.filter((l) => selectedLeagues.includes(l.id)).map((league) => (
+              <View key={league.id} style={styles.teamPickerWrapper}>
+                <TeamPicker
+                  sport="soccer"
+                  leagueId={league.id}
+                  leagueLabel={league.label}
+                  selectedTeams={(setting?.myTeamsByLeague ?? {})[league.id] ?? []}
+                  onSelect={(teams) => updateSoccerLeagueTeams(league.id, teams)}
+                />
+              </View>
+            ))}
+          </>
+        )}
+
+        {/* ── Non-soccer team sports: single team picker ── */}
+        {TEAM_SPORTS.includes(sport) && sport !== 'soccer' && showMyTeams && (
+          <>
+            <Text style={styles.sectionLabel}>My Teams</Text>
+            <View style={styles.teamPickerWrapper}>
+              <TeamPicker
+                sport={sport}
+                selectedTeams={setting?.myTeams ?? []}
+                onSelect={(teams) => updateSportSetting(sport, { myTeams: teams })}
+              />
+            </View>
           </>
         )}
 
@@ -297,5 +330,5 @@ const styles = StyleSheet.create({
   checkMark:         { color: '#fff', fontSize: 13, fontWeight: '700' },
 
   // Team picker
-  teamPickerWrapper: { marginHorizontal: 16 },
+  teamPickerWrapper: { marginHorizontal: 16, marginBottom: 8 },
 });

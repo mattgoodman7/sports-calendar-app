@@ -23,25 +23,26 @@ export type CombatSportFilter = 'title_fights' | 'main_events' | 'all';
 
 // All supported soccer league slugs (ESPN API identifiers)
 export const SOCCER_LEAGUES: { id: string; label: string }[] = [
-  { id: 'usa.1',           label: 'MLS' },
-  { id: 'eng.1',           label: 'Premier League' },
-  { id: 'esp.1',           label: 'La Liga' },
-  { id: 'ger.1',           label: 'Bundesliga' },
-  { id: 'fra.1',           label: 'Ligue 1' },
-  { id: 'uefa.champions',  label: 'Champions League' },
-  { id: 'uefa.europa',     label: 'Europa League' },
-  { id: 'fifa.world',      label: 'World Cup' },
-  { id: 'fifa.wwc',        label: "Women's World Cup" },
-  { id: 'conmebol.america',label: 'Copa America' },
-  { id: 'uefa.euro',       label: 'European Championships' },
-  { id: 'concacaf.gold',   label: 'Gold Cup' },
+  { id: 'usa.1',            label: 'MLS' },
+  { id: 'eng.1',            label: 'Premier League' },
+  { id: 'esp.1',            label: 'La Liga' },
+  { id: 'ger.1',            label: 'Bundesliga' },
+  { id: 'fra.1',            label: 'Ligue 1' },
+  { id: 'uefa.champions',   label: 'Champions League' },
+  { id: 'uefa.europa',      label: 'Europa League' },
+  { id: 'fifa.world',       label: 'World Cup' },
+  { id: 'fifa.wwc',         label: "Women's World Cup" },
+  { id: 'conmebol.america', label: 'Copa America' },
+  { id: 'uefa.euro',        label: 'European Championships' },
+  { id: 'concacaf.gold',    label: 'Gold Cup' },
 ];
 
 export interface SportSetting {
   sport: Sport;
   // Team sports
   teamFilter?: TeamSportFilter;
-  favoriteTeams?: Team[];
+  myTeams?: Team[];                          // for non-soccer team sports
+  myTeamsByLeague?: Record<string, Team[]>;  // for soccer, keyed by league id
   // Tournament sports
   tournamentFilter?: TournamentSportFilter;
   selectedTournaments?: Tournament[];
@@ -124,7 +125,6 @@ export const useAppStore = create<AppState>()(
               teamFilter: 'all',
               tournamentFilter: 'majors',
               combatFilter: 'main_events',
-              // Default soccer to MLS only
               selectedSoccerLeagues: sport === 'soccer' ? ['usa.1'] : undefined,
             };
           }

@@ -23,23 +23,38 @@ function applyFilters(events: SportEvent[], sportSettings: Record<string, any>):
     }
 
     if (filter === 'my_team') {
-      const favTeams: string[] = (setting.favoriteTeams ?? []).map((t: any) => t.name);
-      const match = favTeams.some((name) => event.homeTeam === name || event.awayTeam === name);
-      if (favTeams.length === 0) return true;
-      return match;
+      const myTeams = getMyTeamsForEvent(event, setting);
+      if (myTeams.length === 0) return true;
+      return myTeams.some((name) => event.homeTeam === name || event.awayTeam === name);
     }
 
     if (filter === 'my_team_and_national_tv') {
-      const favTeams: string[] = (setting.favoriteTeams ?? []).map((t: any) => t.name);
-      if (favTeams.length === 0) return event.isNationalTv === true;
+      const myTeams = getMyTeamsForEvent(event, setting);
+      if (myTeams.length === 0) return event.isNationalTv === true;
       return (
         event.isNationalTv === true ||
-        favTeams.some((name) => event.homeTeam === name || event.awayTeam === name)
+        myTeams.some((name) => event.homeTeam === name || event.awayTeam === name)
       );
     }
 
     return true;
   });
+}
+
+/**
+ * Get the list of team names to match against for a given event.
+ * For soccer, uses myTeamsByLeague (all leagues combined).
+ * For other sports, uses myTeams.
+ */
+function getMyTeamsForEvent(event: SportEvent, setting: any): string[] {
+  if (event.sport === 'soccer') {
+    // Flatten all teams across all selected leagues
+    const byLeague: Record<string, any[]> = setting.myTeamsByLeague ?? {};
+    return Object.values(byLeague)
+      .flat()
+      .map((t: any) => t.name);
+  }
+  return (setting.myTeams ?? []).map((t: any) => t.name);
 }
 
 export function useGames(year: number, month: number) {
