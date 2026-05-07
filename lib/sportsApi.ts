@@ -61,7 +61,20 @@ function getTournamentLogo(raw: any, sport: Sport): string | undefined {
 }
 
 function normalizeEvent(raw: any, sport: Sport): SportEvent[] {
+  if (sport === 'f1') {
+  console.log('F1 RAW', JSON.stringify({
+    name: raw.name,
+    shortName: raw.shortName,
+    type: raw.type,
+    competitions: raw.competitions?.map((c: any) => ({
+      type: c.type,
+      name: c.name,
+      notes: c.notes,
+    })),
+  }, null, 2));
+}
   const competition = raw.competitions?.[0];
+
   const competitors = competition?.competitors ?? [];
   const homeComp = competitors.find((c: any) => c.homeAway === 'home');
   const awayComp = competitors.find((c: any) => c.homeAway === 'away');
@@ -69,11 +82,40 @@ function normalizeEvent(raw: any, sport: Sport): SportEvent[] {
   const away = awayComp?.team?.displayName ?? '';
   const homeAbbrev = homeComp?.team?.abbreviation as string | undefined;
   const awayAbbrev = awayComp?.team?.abbreviation as string | undefined;
-  const dateStr = raw.date ? format(new Date(raw.date), 'yyyy-MM-dd') : '';
+
+  // ── Timezone fix: always use the raw UTC date string, never convert through new Date() ──
   const utcDateStr = raw.date ? raw.date.slice(0, 10) : '';
+  const localDateStr = raw.date ? format(new Date(raw.date), 'yyyy-MM-dd') : '';
+
+    // Only show a time if the game has an actual scheduled time (not TBD/midnight UTC)
+  // ESPN uses T00:00Z for TBD games, so we treat that as no time
+  const hasTrueTime = raw.date &&
+    !raw.date.endsWith('T04:00Z') &&
+    !raw.date.endsWith('T00:00:00Z');
+
+
+  // TBD games use T00:00Z or T04:00Z — use UTC date for those
+  // Real games use local date since a 9:30 PM ET game is still "that night" locally
+  const dateStr = hasTrueTime ? localDateStr : utcDateStr;
+
+  const timeStr = hasTrueTime ? format(new Date(raw.date), 'h:mm a') : undefined;
+
   const name = home && away
     ? `${away} @ ${home}`
     : (raw.name ?? raw.shortName ?? 'Event');
+  // Extract game number for playoff games
+  const competitionNotes = competition?.notes ?? [];
+  const playoffHeadline = competitionNotes.find((n: any) => n.headline)?.headline ?? '';
+if (sport === 'nba') {
+  console.log('NOTES', JSON.stringify(competitionNotes), playoffHeadline);
+}
+  const gameNumberMatch = playoffHeadline.match(/Game (\d+)/i);
+  const gameNumber = gameNumberMatch ? parseInt(gameNumberMatch[1], 10) : undefined;
+
+  // Append game number to name for playoff games
+  const displayName = gameNumber
+    ? `${name} — Game ${gameNumber}`
+    : name;  
   const channel = competition?.broadcasts?.[0]?.names?.[0];
   const isNationalTv = (competition?.broadcasts ?? []).length > 0;
   const venue = competition?.venue?.fullName;
@@ -92,7 +134,7 @@ function normalizeEvent(raw: any, sport: Sport): SportEvent[] {
       name: `${name} — Round ${offset + 1}`,
       sport,
       date: format(addDays(startDate, offset), 'yyyy-MM-dd'),
-      time: offset === 0 && raw.date ? format(new Date(raw.date), 'h:mm a') : undefined,
+      time: offset === 0 ? timeStr : undefined,
       venue,
       channel,
       isNationalTv,
@@ -122,9 +164,10 @@ function normalizeEvent(raw: any, sport: Sport): SportEvent[] {
   return [{
     id: `${sport}-espn-${raw.id}`,
     name,
+    gameNumber,
     sport,
     date: dateStr,
-    time: raw.date ? format(new Date(raw.date), 'h:mm a') : undefined,
+    time: timeStr,
     homeTeam: home || undefined,
     awayTeam: away || undefined,
     homeAbbrev,

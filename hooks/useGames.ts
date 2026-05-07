@@ -6,6 +6,9 @@ function applyFilters(events: SportEvent[], sportSettings: Record<string, any>):
   return events.filter((event) => {
     const setting = sportSettings[event.sport];
     if (!setting) return true;
+    
+    // Show playoff games if the toggle is on
+    if (event.gameNumber && setting.alwaysShowPlayoffs) return true;
 
     // Golf/Tennis — filter by majors
     if (event.sport === 'golf' || event.sport === 'tennis') {
@@ -66,7 +69,8 @@ export function useGames(year: number, month: number) {
   const query = useQuery({
     queryKey: ['games', sports, year, month, preferences.sportSettings?.soccer?.selectedSoccerLeagues],
     queryFn: () => fetchGamesForSports(sports, year, month, preferences),
-    staleTime: 1000 * 60 * 60,
+   // staleTime: 1000 * 60 * 60,
+   staleTime: 0,
     enabled: sports.length > 0,
   });
 

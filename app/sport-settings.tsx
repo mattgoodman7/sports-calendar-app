@@ -174,18 +174,17 @@ export default function SportSettingsScreen() {
             </>
           )}
 
-          {/* ── Team sports: Filter ── */}
+          {/* ── Team sports: Filter + Playoffs toggle ── */}
           {TEAM_SPORTS.includes(sport) && (
             <>
               <Text style={styles.sectionLabel}>Show</Text>
               <View style={styles.section}>
-                {(COLLEGE_SPORTS.includes(sport) ? COLLEGE_FILTER_OPTIONS : TEAM_FILTER_OPTIONS).map((opt, i, arr) => {
+                {(COLLEGE_SPORTS.includes(sport) ? COLLEGE_FILTER_OPTIONS : TEAM_FILTER_OPTIONS).map((opt, i) => {
                   const isSelected = setting?.teamFilter === opt.key;
-                  const isLast = i === arr.length - 1;
                   return (
                     <TouchableOpacity
                       key={opt.key}
-                      style={[styles.optionRow, !isLast && styles.rowBorder]}
+                      style={[styles.optionRow, styles.rowBorder]}
                       onPress={() => updateSportSetting(sport, { teamFilter: opt.key })}
                     >
                       <View style={{ flex: 1 }}>
@@ -200,6 +199,24 @@ export default function SportSettingsScreen() {
                     </TouchableOpacity>
                   );
                 })}
+
+                {/* Playoffs toggle — last row in the same section */}
+                <TouchableOpacity
+                  style={styles.optionRow}
+                  onPress={() => updateSportSetting(sport, { alwaysShowPlayoffs: !setting?.alwaysShowPlayoffs })}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.optionLabel, setting?.alwaysShowPlayoffs && { color }]}>
+                      {sport === 'ncaamb' ? 'March Madness' : sport === 'ncaafb' ? 'CFP' : 'Playoffs'}
+                    </Text>
+                    <Text style={styles.optionDescription}>Show all playoff games regardless of other filters</Text>
+                  </View>
+                  {setting?.alwaysShowPlayoffs && (
+                    <View style={[styles.checkCircle, { backgroundColor: color }]}>
+                      <Text style={styles.checkMark}>✓</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
               </View>
             </>
           )}

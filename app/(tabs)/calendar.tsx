@@ -1,17 +1,21 @@
 import { addMonths, format, getDay, getDaysInMonth, startOfMonth, subMonths } from 'date-fns';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRef, useState } from 'react';
 import {
-    ActivityIndicator,
-    Dimensions,
-    Image,
-    Modal,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Dimensions,
+  Image,
+  Modal,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
+import { PanGestureHandler, State } from 'react-native-gesture-handler';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useGames } from '../../hooks/useGames';
 import { Sport, SportEvent, useAppStore } from '../../lib/store';
@@ -44,37 +48,53 @@ const SPORT_DURATION_HOURS: Record<Sport, number> = {
 const TEAM_SPORTS: Sport[] = ['nfl', 'nba', 'mlb', 'nhl', 'soccer', 'wnba', 'ncaafb', 'ncaamb'];
 
 const NFL_GROUP_WINDOW_MINUTES = 45;
-const NFL_GROUP_THRESHOLD = 3;
+const NFL_GROUP_THRESHOLD      = 3;
 
-const DAY_LABELS  = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const HOUR_HEIGHT = 80;
-const TOTAL_HOURS = 24;
-const TIME_COL_W  = 52;
-const EVENT_COL_W = 160;
-const LOGO_SIZE   = 20;
-
-// Calculate cell height to fill the screen
-// Reserve space for: safe area (~50px), header (~60px), day labels (~30px), padding (~20px)
+const DAY_LABELS     = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const HOUR_HEIGHT    = 56;
+const TOTAL_HOURS    = 24;
+const TIME_COL_W     = 52;
+const LOGO_SIZE      = 20;
+const SCREEN_WIDTH   = Dimensions.get('window').width;
 const SCREEN_HEIGHT  = Dimensions.get('window').height;
 const GRID_RESERVE   = 160;
 const MAX_WEEKS      = 6;
 const CELL_HEIGHT    = Math.floor((SCREEN_HEIGHT - GRID_RESERVE) / MAX_WEEKS);
-// Each pill is ~13px tall + 2px margin = 15px, day number takes ~26px
 const PILL_HEIGHT    = 15;
 const DAY_NUM_HEIGHT = 26;
 const MAX_PILLS      = Math.max(1, Math.floor((CELL_HEIGHT - DAY_NUM_HEIGHT) / PILL_HEIGHT));
+const SWIPE_MIN      = 30;
+
+// Timeline width = screen width minus side margins minus time column
+const TIMELINE_MARGIN  = 16; // matches dayDetail margin
+const TIMELINE_WIDTH   = SCREEN_WIDTH - TIMELINE_MARGIN * 2 - TIME_COL_W;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-/** Get a short pill label for an event */
 function getPillLabel(event: SportEvent): string {
   if (event.awayAbbrev && event.homeAbbrev) {
     return `${event.awayAbbrev}@${event.homeAbbrev}`;
   }
-  // For non-team sports, shorten the name
   const name = event.name;
   if (name.length > 10) return name.slice(0, 9) + '…';
   return name;
+}
+
+function parseTimeToHour(timeStr?: string): number | null {
+  if (!timeStr) return null;
+  const m = timeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+  if (!m) return null;
+  let h = parseInt(m[1], 10);
+  const min = parseInt(m[2], 10);
+  const ampm = m[3].toUpperCase();
+  if (ampm === 'PM' && h !== 12) h += 12;
+  if (ampm === 'AM' && h === 12) h = 0;
+  return h + min / 60;
+}
+
+function getCurrentHour(): number {
+  const now = new Date();
+  return now.getHours() + now.getMinutes() / 60;
 }
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -104,22 +124,10 @@ interface PositionedDisplay {
   totalColumns: number;
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function parseTimeToHour(timeStr?: string): number | null {
-  if (!timeStr) return null;
-  const m = timeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
-  if (!m) return null;
-  let h = parseInt(m[1], 10);
-  const min = parseInt(m[2], 10);
-  const ampm = m[3].toUpperCase();
-  if (ampm === 'PM' && h !== 12) h += 12;
-  if (ampm === 'AM' && h === 12) h = 0;
-  return h + min / 60;
-}
+// ─── Logic ───────────────────────────────────────────────────────────────────
 
 function groupNflGames(events: SportEvent[]): DisplayEvent[] {
-  const nflGames = events.filter((e) => e.sport === 'nfl');
+  const nflGames    = events.filter((e) => e.sport === 'nfl');
   const otherEvents = events.filter((e) => e.sport !== 'nfl');
 
   const timedNfl: { event: SportEvent; hour: number }[] = [];
@@ -132,24 +140,20 @@ function groupNflGames(events: SportEvent[]): DisplayEvent[] {
   }
   timedNfl.sort((a, b) => a.hour - b.hour);
 
-  const processed = new Set<string>();
+  const processed   = new Set<string>();
   const displayEvents: DisplayEvent[] = [];
 
   for (let i = 0; i < timedNfl.length; i++) {
     if (processed.has(timedNfl[i].event.id)) continue;
-
     const windowStart = timedNfl[i].hour;
-    const windowEnd = windowStart + NFL_GROUP_WINDOW_MINUTES / 60;
-
-    const group = timedNfl.filter(
+    const windowEnd   = windowStart + NFL_GROUP_WINDOW_MINUTES / 60;
+    const group       = timedNfl.filter(
       (g) => !processed.has(g.event.id) && g.hour >= windowStart && g.hour <= windowEnd
     );
-
     if (group.length >= NFL_GROUP_THRESHOLD) {
       group.forEach((g) => processed.add(g.event.id));
-      const earliestHour = Math.min(...group.map((g) => g.hour));
+      const earliestHour  = Math.min(...group.map((g) => g.hour));
       const earliestEvent = group.find((g) => g.hour === earliestHour)!;
-
       displayEvents.push({
         id: `nfl-group-${earliestEvent.event.id}`,
         sport: 'nfl',
@@ -160,23 +164,15 @@ function groupNflGames(events: SportEvent[]): DisplayEvent[] {
       });
     } else {
       processed.add(timedNfl[i].event.id);
-      displayEvents.push({
-        event: timedNfl[i].event,
-        startHour: timedNfl[i].hour,
-        isGroup: false,
-      });
+      displayEvents.push({ event: timedNfl[i].event, startHour: timedNfl[i].hour, isGroup: false });
     }
   }
 
-  for (const e of untimedNfl) {
-    displayEvents.push({ event: e, startHour: 0, isGroup: false });
-  }
-
+  for (const e of untimedNfl)  displayEvents.push({ event: e, startHour: 0, isGroup: false });
   for (const e of otherEvents) {
     const hour = parseTimeToHour(e.time);
     displayEvents.push({ event: e, startHour: hour ?? 0, isGroup: false });
   }
-
   return displayEvents;
 }
 
@@ -189,24 +185,26 @@ function layoutDisplayEvents(displays: DisplayEvent[]): {
 
   for (const d of displays) {
     const start = d.startHour;
-    if (start === 0 && !d.isGroup && !d.event.time) {
-      ungrouped.push(d);
-      continue;
-    }
+    if (start === 0 && !d.isGroup && !d.event.time) { ungrouped.push(d); continue; }
     const sport = d.isGroup ? d.sport : d.event.sport;
-    const dur = SPORT_DURATION_HOURS[sport] ?? 2;
-    timed.push({ display: d, start, end: start + dur });
+    timed.push({ display: d, start, end: start + (SPORT_DURATION_HOURS[sport] ?? 2) });
   }
-
   timed.sort((a, b) => a.start - b.start);
 
-  const columns: number[] = [];
   const assigned: (PositionedDisplay & { end: number })[] = [];
 
   for (const item of timed) {
-    let col = columns.findIndex((endTime) => endTime <= item.start);
-    if (col === -1) col = columns.length;
-    columns[col] = item.end;
+    // Find which columns are occupied by overlapping events
+    const occupiedCols = new Set<number>();
+    for (const other of assigned) {
+      if (item.start < other.end && item.end > other.startHour) {
+        occupiedCols.add(other.column);
+      }
+    }
+    // Pick the lowest available column
+    let col = 0;
+    while (occupiedCols.has(col)) col++;
+
     const sport = item.display.isGroup ? item.display.sport : item.display.event.sport;
     assigned.push({
       display: item.display,
@@ -218,15 +216,22 @@ function layoutDisplayEvents(displays: DisplayEvent[]): {
     });
   }
 
+  // For each event, totalColumns = number of columns needed by its overlap group
   for (let i = 0; i < assigned.length; i++) {
-    let maxCol = assigned[i].column;
-    for (let j = 0; j < assigned.length; j++) {
-      if (i === j) continue;
-      const overlap =
-        assigned[i].startHour < assigned[j].end &&
-        assigned[i].end > assigned[j].startHour;
-      if (overlap) maxCol = Math.max(maxCol, assigned[j].column);
+    // Find all events that overlap with this one, directly or transitively
+    const group = new Set<number>();
+    const queue = [i];
+    while (queue.length > 0) {
+      const idx = queue.pop()!;
+      if (group.has(idx)) continue;
+      group.add(idx);
+      for (let j = 0; j < assigned.length; j++) {
+        if (!group.has(j) && assigned[idx].startHour < assigned[j].end && assigned[idx].end > assigned[j].startHour) {
+          queue.push(j);
+        }
+      }
     }
+    const maxCol = Math.max(...[...group].map((idx) => assigned[idx].column));
     assigned[i].totalColumns = maxCol + 1;
   }
 
@@ -253,23 +258,31 @@ function HourGrid({ width }: { width: number }) {
   return (
     <View style={[StyleSheet.absoluteFill, { width }]} pointerEvents="none">
       {Array.from({ length: TOTAL_HOURS }).map((_, h) => (
-        <View
-          key={h}
-          style={{
-            position: 'absolute',
-            top: h * HOUR_HEIGHT,
-            left: 0,
-            right: 0,
-            height: StyleSheet.hairlineWidth,
-            backgroundColor: '#eee',
-          }}
-        />
+        <View key={h} style={{ position: 'absolute', top: h * HOUR_HEIGHT, left: 0, right: 0, height: StyleSheet.hairlineWidth, backgroundColor: '#eee' }} />
       ))}
     </View>
   );
 }
 
-function DisplayEventBlock({ pd, totalWidth }: { pd: PositionedDisplay; totalWidth: number }) {
+function CurrentTimeLine({ width }: { width: number }) {
+  const top = getCurrentHour() * HOUR_HEIGHT;
+  return (
+    <View pointerEvents="none" style={{ position: 'absolute', top, left: 0, width, flexDirection: 'row', alignItems: 'center', zIndex: 10 }}>
+      <View style={styles.currentTimeDot} />
+      <View style={[styles.currentTimeLine, { width: width - 8 }]} />
+    </View>
+  );
+}
+
+function DisplayEventBlock({
+  pd,
+  totalWidth,
+  isToday,
+}: {
+  pd: PositionedDisplay;
+  totalWidth: number;
+  isToday: boolean;
+}) {
   const top    = pd.startHour * HOUR_HEIGHT;
   const height = Math.max(pd.durationHours * HOUR_HEIGHT - 4, 28);
   const colW   = totalWidth / pd.totalColumns;
@@ -278,10 +291,26 @@ function DisplayEventBlock({ pd, totalWidth }: { pd: PositionedDisplay; totalWid
   const sport  = pd.display.isGroup ? pd.display.sport : pd.display.event.sport;
   const color  = SPORT_COLORS[sport];
 
+  let opacity = 1;
+  if (isToday) {
+    const now     = getCurrentHour();
+    const endHour = pd.startHour + pd.durationHours;
+    if (now >= endHour)          opacity = 0.35;
+    else if (now > pd.startHour) opacity = 0.65;
+  }
+
+  const fadeOverlay = (
+    <LinearGradient
+      colors={['transparent', color]}
+      style={styles.eventBlockFade}
+      pointerEvents="none"
+    />
+  );
+
   if (pd.display.isGroup) {
     const group = pd.display as GroupedEvent;
     return (
-      <View style={[styles.eventBlock, { top, height, left, width, backgroundColor: color }]}>
+      <View style={[styles.eventBlock, { top, height, left, width, backgroundColor: color, opacity }]}>
         <Text style={styles.eventBlockTime}>{group.time}</Text>
         <Text style={styles.eventBlockGroupLabel}>NFL Games</Text>
         <View style={styles.groupList}>
@@ -291,24 +320,20 @@ function DisplayEventBlock({ pd, totalWidth }: { pd: PositionedDisplay; totalWid
             </Text>
           ))}
         </View>
+        {fadeOverlay}
       </View>
     );
   }
 
-  const e = pd.display.event;
+  const e           = pd.display.event;
   const isTeamSport = TEAM_SPORTS.includes(sport);
-
   return (
-    <View style={[styles.eventBlock, { top, height, left, width, backgroundColor: color }]}>
+    <View style={[styles.eventBlock, { top, height, left, width, backgroundColor: color, opacity }]}>
       <Text style={styles.eventBlockName} numberOfLines={2}>{e.name}</Text>
       {isTeamSport && (e.homeLogo || e.awayLogo) && (
         <View style={styles.logoRow}>
-          {e.awayLogo && (
-            <Image source={{ uri: e.awayLogo }} style={styles.teamLogo} resizeMode="contain" />
-          )}
-          {e.homeLogo && (
-            <Image source={{ uri: e.homeLogo }} style={styles.teamLogo} resizeMode="contain" />
-          )}
+          {e.awayLogo && <Image source={{ uri: e.awayLogo }} style={styles.teamLogo} resizeMode="contain" />}
+          {e.homeLogo && <Image source={{ uri: e.homeLogo }} style={styles.teamLogo} resizeMode="contain" />}
         </View>
       )}
       {!isTeamSport && e.eventLogo && (
@@ -316,8 +341,12 @@ function DisplayEventBlock({ pd, totalWidth }: { pd: PositionedDisplay; totalWid
           <Image source={{ uri: e.eventLogo }} style={styles.eventLogoImg} resizeMode="contain" />
         </View>
       )}
-      {e.time && <Text style={styles.eventBlockTime}>{e.time}</Text>}
+      {e.time    && <Text style={styles.eventBlockTime}>{e.time}</Text>}
       {e.channel && <Text style={styles.eventBlockChannel} numberOfLines={1}>{e.channel}</Text>}
+      {e.gameNumber && (
+        <Text style={styles.gameNumberBadge}>Game {e.gameNumber}</Text>
+      )}
+      {fadeOverlay}
     </View>
   );
 }
@@ -326,6 +355,10 @@ function DisplayEventBlock({ pd, totalWidth }: { pd: PositionedDisplay; totalWid
 
 export default function CalendarScreen() {
   const scrollRef    = useRef<ScrollView>(null);
+  const dayDetailRef = useRef<View>(null);
+  const panRef       = useRef(null);
+  const gestureBegan = useRef({ atLeftEdge: false, atRightEdge: false });
+
   const [current, setCurrent]           = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -342,10 +375,40 @@ export default function CalendarScreen() {
   const firstDayOfWeek = getDay(startOfMonth(current));
   const today          = format(new Date(), 'yyyy-MM-dd');
 
+  const monthDays = Array.from({ length: daysInMonth }, (_, i) => {
+    const day = i + 1;
+    return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  });
+
+  const goToPrevDay = () => {
+    if (!selectedDate) return;
+    const idx = monthDays.indexOf(selectedDate);
+    if (idx > 0) setSelectedDate(monthDays[idx - 1]);
+  };
+
+  const goToNextDay = () => {
+    if (!selectedDate) return;
+    const idx = monthDays.indexOf(selectedDate);
+    if (idx < monthDays.length - 1) setSelectedDate(monthDays[idx + 1]);
+  };
+
+  const handlePanGesture = ({ nativeEvent }: any) => {
+    if (nativeEvent.state !== State.END) return;
+    const { translationX } = nativeEvent;
+    if (translationX > SWIPE_MIN)  goToPrevDay();
+    if (translationX < -SWIPE_MIN) goToNextDay();
+  };
+
   const handleDatePress = (dateStr: string, isSelected: boolean) => {
     setSelectedDate(isSelected ? null : dateStr);
     if (!isSelected) {
-      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
+      setTimeout(() => {
+        dayDetailRef.current?.measureLayout(
+          scrollRef.current as any,
+          (_x, y) => scrollRef.current?.scrollTo({ y, animated: true }),
+          () => {}
+        );
+      }, 100);
     }
   };
 
@@ -364,12 +427,11 @@ export default function CalendarScreen() {
     setNewEvent({ name: '', sport: 'nba', time: '', note: '' });
   };
 
-  const selectedEvents = selectedDate ? (eventsByDate[selectedDate] ?? []) : [];
-  const displayEvents  = groupNflGames(selectedEvents);
+  const selectedEvents            = selectedDate ? (eventsByDate[selectedDate] ?? []) : [];
+  const displayEvents             = groupNflGames(selectedEvents);
   const { positioned, ungrouped } = layoutDisplayEvents(displayEvents);
-  const totalCols      = Math.max(1, ...positioned.map((p) => p.totalColumns));
-  const timelineWidth  = EVENT_COL_W * totalCols;
-  const timelineHeight = TOTAL_HOURS * HOUR_HEIGHT;
+  const timelineHeight            = TOTAL_HOURS * HOUR_HEIGHT;
+  const isToday                   = selectedDate === today;
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -407,19 +469,16 @@ export default function CalendarScreen() {
           {Array.from({ length: daysInMonth }).map((_, i) => {
             const day     = i + 1;
             const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-            const events = (eventsByDate[dateStr] ?? []).slice().sort((a, b) => {
+            const events  = (eventsByDate[dateStr] ?? []).slice().sort((a, b) => {
               const isIndividual = (s: Sport) => s === 'golf' || s === 'tennis';
               if (isIndividual(a.sport) && !isIndividual(b.sport)) return -1;
               if (!isIndividual(a.sport) && isIndividual(b.sport)) return 1;
-              const aHour = parseTimeToHour(a.time) ?? 25;
-              const bHour = parseTimeToHour(b.time) ?? 25;
-              return aHour - bHour;
+              return (parseTimeToHour(a.time) ?? 25) - (parseTimeToHour(b.time) ?? 25);
             });
-
-            const isToday    = dateStr === today;
-            const isSelected = dateStr === selectedDate;
-            const visibleEvents = events.slice(0, MAX_PILLS);
-            const remaining = events.length - MAX_PILLS;
+            const isTodayCell = dateStr === today;
+            const isSelected  = dateStr === selectedDate;
+            const visible      = events.slice(0, MAX_PILLS);
+            const remaining    = events.length - MAX_PILLS;
 
             return (
               <TouchableOpacity
@@ -427,92 +486,93 @@ export default function CalendarScreen() {
                 style={[styles.cell, { height: CELL_HEIGHT }, isSelected && styles.cellSelected]}
                 onPress={() => handleDatePress(dateStr, isSelected)}
               >
-                <View style={[styles.dayNum, isToday && styles.dayNumToday]}>
-                  <Text style={[styles.dayNumText, isToday && { color: '#fff' }]}>{day}</Text>
+                <View style={[styles.dayNum, isTodayCell && styles.dayNumToday]}>
+                  <Text style={[styles.dayNumText, isTodayCell && { color: '#fff' }]}>{day}</Text>
                 </View>
-                {visibleEvents.map((e) => (
+                {visible.map((e) => (
                   <View key={e.id} style={[styles.pill, { backgroundColor: SPORT_COLORS[e.sport] }]}>
-                    <Text style={styles.pillText} numberOfLines={1}>
-                      {getPillLabel(e)}
-                    </Text>
+                    <Text style={styles.pillText} numberOfLines={1}>{getPillLabel(e)}</Text>
                   </View>
                 ))}
-                {remaining > 0 && (
-                  <Text style={styles.moreText}>+{remaining} more</Text>
-                )}
+                {remaining > 0 && <Text style={styles.moreText}>+{remaining} more</Text>}
               </TouchableOpacity>
             );
           })}
         </View>
 
-        {/* ── Daily detail (Outlook-style) ── */}
+        {/* ── Day detail ── */}
         {selectedDate && (
-          <View style={styles.dayDetail}>
-            <View style={styles.dayDetailHeader}>
-              <Text style={styles.dayDetailTitle}>
-                {format(new Date(selectedDate + 'T00:00:00'), 'EEEE, MMMM d')}
-              </Text>
-              <TouchableOpacity style={styles.addEventBtn} onPress={() => setShowAddModal(true)}>
-                <Text style={styles.addEventBtnText}>+ Add</Text>
-              </TouchableOpacity>
-            </View>
+          <PanGestureHandler
+            ref={panRef}
+            activeOffsetX={[-15, 15]}
+            failOffsetY={[-15, 15]}
+            onHandlerStateChange={handlePanGesture}
+          >
+            <View ref={dayDetailRef} style={styles.dayDetail}>
+              <View style={styles.dayDetailHeader}>
+                <Text style={styles.dayDetailTitle}>
+                  {format(new Date(selectedDate + 'T00:00:00'), 'EEEE, MMMM d')}
+                </Text>
+                <TouchableOpacity style={styles.addEventBtn} onPress={() => setShowAddModal(true)}>
+                  <Text style={styles.addEventBtnText}>+ Add</Text>
+                </TouchableOpacity>
+              </View>
 
-            {selectedEvents.length === 0 ? (
-              <Text style={styles.noEvents}>No games scheduled</Text>
-            ) : (
-              <>
-                {ungrouped.length > 0 && (
-                  <View style={styles.ungroupedSection}>
-                    <Text style={styles.ungroupedLabel}>Time TBD</Text>
-                    {ungrouped.map((d) => {
-                      const e = d.isGroup ? null : d.event;
-                      if (!e) return null;
-                      return (
-                        <View key={e.id} style={styles.eventRow}>
-                          <View style={[styles.eventDot, { backgroundColor: SPORT_COLORS[e.sport] }]} />
-                          <View style={{ flex: 1 }}>
-                            <Text style={styles.eventName}>{e.name}</Text>
-                            {e.channel && <Text style={styles.eventMeta}>{e.channel}</Text>}
+              {selectedEvents.length === 0 ? (
+                <Text style={styles.noEvents}>No games scheduled</Text>
+              ) : (
+                <>
+                  {ungrouped.length > 0 && (
+                    <View style={styles.ungroupedSection}>
+                      <Text style={styles.ungroupedLabel}>Time TBD</Text>
+                      {ungrouped.map((d) => {
+                        const e = d.isGroup ? null : d.event;
+                        if (!e) return null;
+                        return (
+                          <View key={e.id} style={styles.eventRow}>
+                            <View style={[styles.eventDot, { backgroundColor: SPORT_COLORS[e.sport] }]} />
+                            <View style={{ flex: 1 }}>
+                              <Text style={styles.eventName}>{e.name}</Text>
+                              {e.channel && <Text style={styles.eventMeta}>{e.channel}</Text>}
+                            </View>
+                            {e.eventLogo && (
+                              <Image source={{ uri: e.eventLogo }} style={styles.ungroupedEventLogo} resizeMode="contain" />
+                            )}
+                            {e.gameNumber && (
+                              <Text style={styles.ungroupedGameNumber}>Game {e.gameNumber}</Text>
+                            )}
+                            <Text style={styles.sportTag}>{e.sport.toUpperCase()}</Text>
                           </View>
-                          {e.eventLogo && (
-                            <Image
-                              source={{ uri: e.eventLogo }}
-                              style={styles.ungroupedEventLogo}
-                              resizeMode="contain"
-                            />
-                          )}
-                          <Text style={styles.sportTag}>{e.sport.toUpperCase()}</Text>
-                        </View>
-                      );
-                    })}
-                  </View>
-                )}
+                        );
+                      })}
+                    </View>
+                  )}
 
-                {positioned.length > 0 && (
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    style={styles.timelineOuter}
-                  >
-                    <View style={{ flexDirection: 'row' }}>
-                      <HourLabels />
-                      <View style={{ width: timelineWidth, height: timelineHeight }}>
-                        <HourGrid width={timelineWidth} />
-                        {positioned.map((pd) => (
-                          <DisplayEventBlock
-                            key={pd.display.isGroup ? pd.display.id : pd.display.event.id}
-                            pd={pd}
-                            totalWidth={timelineWidth}
-                          />
-                        ))}
+                  {positioned.length > 0 && (
+                    <View style={styles.timelineOuter}>
+                      <View style={{ flexDirection: 'row' }}>
+                        <HourLabels />
+                        <View style={{ width: TIMELINE_WIDTH, height: timelineHeight }}>
+                          <HourGrid width={TIMELINE_WIDTH} />
+                          {isToday && <CurrentTimeLine width={TIMELINE_WIDTH} />}
+                          {positioned.map((pd) => (
+                            <DisplayEventBlock
+                              key={pd.display.isGroup ? pd.display.id : pd.display.event.id}
+                              pd={pd}
+                              totalWidth={TIMELINE_WIDTH}
+                              isToday={isToday}
+                            />
+                          ))}
+                        </View>
                       </View>
                     </View>
-                  </ScrollView>
-                )}
-              </>
-            )}
-          </View>
+                  )}
+                </>
+              )}
+            </View>
+          </PanGestureHandler>
         )}
+
       </ScrollView>
 
       {/* ── Add event modal ── */}
@@ -597,14 +657,15 @@ const styles = StyleSheet.create({
   addEventBtnText: { color: '#fff', fontSize: 13, fontWeight: '600' },
   noEvents:        { color: '#bbb', fontSize: 14, textAlign: 'center', paddingVertical: 24 },
 
-  ungroupedSection:   { paddingHorizontal: 16, paddingBottom: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#eee' },
-  ungroupedLabel:     { fontSize: 11, color: '#aaa', fontWeight: '600', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 },
-  eventRow:           { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#f0f0f0' },
-  eventDot:           { width: 10, height: 10, borderRadius: 5 },
-  eventName:          { fontSize: 14, fontWeight: '500', color: '#111' },
-  eventMeta:          { fontSize: 12, color: '#888', marginTop: 2 },
-  sportTag:           { fontSize: 10, color: '#bbb', fontWeight: '600' },
-  ungroupedEventLogo: { width: 24, height: 24, marginRight: 4 },
+  ungroupedSection:    { paddingHorizontal: 16, paddingBottom: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#eee' },
+  ungroupedLabel:      { fontSize: 11, color: '#aaa', fontWeight: '600', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 },
+  eventRow:            { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#f0f0f0' },
+  eventDot:            { width: 10, height: 10, borderRadius: 5 },
+  eventName:           { fontSize: 14, fontWeight: '500', color: '#111' },
+  eventMeta:           { fontSize: 12, color: '#888', marginTop: 2 },
+  sportTag:            { fontSize: 10, color: '#bbb', fontWeight: '600' },
+  ungroupedEventLogo:  { width: 24, height: 24, marginRight: 4 },
+  ungroupedGameNumber: { fontSize: 10, fontWeight: '700', color: '#888', marginRight: 4 },
 
   timelineOuter: { marginTop: 8 },
   hourLabel:     { fontSize: 10, color: '#aaa', fontWeight: '500', textAlign: 'right', paddingRight: 8, width: TIME_COL_W },
@@ -616,10 +677,16 @@ const styles = StyleSheet.create({
   eventBlockGroupLabel: { fontSize: 11, color: '#fff', fontWeight: '700', marginTop: 2, marginBottom: 3 },
   groupList:            { gap: 2 },
   groupItem:            { fontSize: 9, color: 'rgba(255,255,255,0.9)', lineHeight: 13, flexWrap: 'wrap' },
+  gameNumberBadge:      { position: 'absolute', bottom: 4, right: 6, fontSize: 9, fontWeight: '700', color: 'rgba(255,255,255,0.9)' },
+
+  eventBlockFade: { position: 'absolute', bottom: 0, left: 0, right: 0, height: '20%' },
 
   logoRow:      { flexDirection: 'row', gap: 4, marginTop: 4, marginBottom: 2 },
   teamLogo:     { width: LOGO_SIZE, height: LOGO_SIZE, borderRadius: 2 },
   eventLogoImg: { width: LOGO_SIZE * 2, height: LOGO_SIZE, borderRadius: 2 },
+
+  currentTimeDot:  { width: 8, height: 8, borderRadius: 4, backgroundColor: '#E53935' },
+  currentTimeLine: { height: 1.5, backgroundColor: '#E53935' },
 
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
   modal:         { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24, paddingBottom: 40 },

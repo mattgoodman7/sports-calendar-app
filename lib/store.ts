@@ -39,6 +39,7 @@ export const SOCCER_LEAGUES: { id: string; label: string }[] = [
 
 export interface SportSetting {
   sport: Sport;
+  alwaysShowPlayoffs?: boolean;
   teamFilter?: TeamSportFilter;
   myTeams?: Team[];
   myTeamsByLeague?: Record<string, Team[]>;
@@ -66,6 +67,7 @@ export interface SportEvent {
   isNationalTv?: boolean;
   isMajor?: boolean;
   isCustom?: boolean;
+  gameNumber?: number;
 }
 
 export interface UserPreferences {
