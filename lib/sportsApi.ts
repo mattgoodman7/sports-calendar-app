@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { addDays, endOfMonth, format, parseISO, startOfMonth } from 'date-fns';
-import { Sport, SportEvent, UserPreferences } from './store';
+import { F1SessionType, ROUND_LABELS, SOCCER_CLUB_LEAGUES, SOCCER_KNOCKOUT_COMPETITIONS, Sport, SportEvent, UserPreferences } from './store';
 
 const BASE = 'https://site.api.espn.com/apis/site/v2/sports';
 
@@ -36,6 +36,16 @@ const TENNIS_MAJORS = [
   'australian open', 'french open', 'roland garros', 'wimbledon', 'us open',
 ];
 
+const F1_SESSION_MAP: Record<string, { type: F1SessionType; label: string; duration: number }> = {
+  FP1:  { type: 'FP1',  label: 'Practice 1',      duration: 1 },
+  FP2:  { type: 'FP2',  label: 'Practice 2',       duration: 1 },
+  FP3:  { type: 'FP3',  label: 'Practice 3',       duration: 1 },
+  SS:   { type: 'SS',   label: 'Sprint Shootout',  duration: 0.5 },
+  SR:   { type: 'SR',   label: 'Sprint Race',      duration: 0.5 },
+  Qual: { type: 'Qual', label: 'Qualifying',       duration: 1 },
+  Race: { type: 'Race', label: 'Race',             duration: 2 },
+};
+
 function isMajorTournament(name: string, sport: Sport): boolean {
   const lower = name.toLowerCase();
   if (sport === 'tennis') return TENNIS_MAJORS.some((m) => lower.includes(m));
@@ -60,21 +70,43 @@ function getTournamentLogo(raw: any, sport: Sport): string | undefined {
   return undefined;
 }
 
-function normalizeEvent(raw: any, sport: Sport): SportEvent[] {
-  if (sport === 'f1') {
-  console.log('F1 RAW', JSON.stringify({
-    name: raw.name,
-    shortName: raw.shortName,
-    type: raw.type,
-    competitions: raw.competitions?.map((c: any) => ({
-      type: c.type,
-      name: c.name,
-      notes: c.notes,
-    })),
-  }, null, 2));
+function parseDateStr(dateStr: string): { localDate: string; utcDate: string; timeStr: string | undefined } {
+  const utcDate = dateStr.slice(0, 10);
+  const hasTrueTime = !dateStr.endsWith('T04:00Z') && !dateStr.endsWith('T00:00:00Z');
+  const localDate = hasTrueTime ? format(new Date(dateStr), 'yyyy-MM-dd') : utcDate;
+  const timeStr = hasTrueTime ? format(new Date(dateStr), 'h:mm a') : undefined;
+  return { localDate, utcDate, timeStr };
 }
-  const competition = raw.competitions?.[0];
 
+function normalizeEvent(raw: any, sport: Sport, leagueId?: string): SportEvent[] {
+  if (sport === 'f1') {
+    const raceName = raw.name ?? raw.shortName ?? 'Grand Prix';
+    const eventLogo = 'https://a.espncdn.com/redesign/assets/img/icons/ESPN-icon-racing.png';
+    const sessions: SportEvent[] = [];
+    for (const competition of raw.competitions ?? []) {
+      const abbrev = competition.type?.abbreviation;
+      const sessionInfo = F1_SESSION_MAP[abbrev];
+      if (!sessionInfo) continue;
+      const compDate = competition.date;
+      if (!compDate) continue;
+      const { localDate, timeStr } = parseDateStr(compDate);
+      sessions.push({
+        id: `f1-espn-${raw.id}-${abbrev}`,
+        name: `${raceName} — ${sessionInfo.label}`,
+        sport: 'f1',
+        date: localDate,
+        time: timeStr,
+        eventLogo,
+        f1SessionType: sessionInfo.type,
+        isNationalTv: (competition.broadcasts ?? []).length > 0,
+        channel: competition.broadcasts?.[0]?.names?.[0],
+        durationHours: sessionInfo.duration,
+      });
+    }
+    return sessions;
+  }
+
+  const competition = raw.competitions?.[0];
   const competitors = competition?.competitors ?? [];
   const homeComp = competitors.find((c: any) => c.homeAway === 'home');
   const awayComp = competitors.find((c: any) => c.homeAway === 'away');
@@ -83,48 +115,41 @@ function normalizeEvent(raw: any, sport: Sport): SportEvent[] {
   const homeAbbrev = homeComp?.team?.abbreviation as string | undefined;
   const awayAbbrev = awayComp?.team?.abbreviation as string | undefined;
 
-  // ── Timezone fix: always use the raw UTC date string, never convert through new Date() ──
   const utcDateStr = raw.date ? raw.date.slice(0, 10) : '';
   const localDateStr = raw.date ? format(new Date(raw.date), 'yyyy-MM-dd') : '';
-
-    // Only show a time if the game has an actual scheduled time (not TBD/midnight UTC)
-  // ESPN uses T00:00Z for TBD games, so we treat that as no time
   const hasTrueTime = raw.date &&
     !raw.date.endsWith('T04:00Z') &&
     !raw.date.endsWith('T00:00:00Z');
-
-
-  // TBD games use T00:00Z or T04:00Z — use UTC date for those
-  // Real games use local date since a 9:30 PM ET game is still "that night" locally
   const dateStr = hasTrueTime ? localDateStr : utcDateStr;
-
   const timeStr = hasTrueTime ? format(new Date(raw.date), 'h:mm a') : undefined;
 
   const name = home && away
     ? `${away} @ ${home}`
     : (raw.name ?? raw.shortName ?? 'Event');
-  // Extract game number for playoff games
+
   const competitionNotes = competition?.notes ?? [];
   const playoffHeadline = competitionNotes.find((n: any) => n.headline)?.headline ?? '';
-if (sport === 'nba') {
-  console.log('NOTES', JSON.stringify(competitionNotes), playoffHeadline);
-}
   const gameNumberMatch = playoffHeadline.match(/Game (\d+)/i);
   const gameNumber = gameNumberMatch ? parseInt(gameNumberMatch[1], 10) : undefined;
 
-  // Append game number to name for playoff games
-  const displayName = gameNumber
-    ? `${name} — Game ${gameNumber}`
-    : name;  
   const channel = competition?.broadcasts?.[0]?.names?.[0];
   const isNationalTv = (competition?.broadcasts ?? []).length > 0;
   const venue = competition?.venue?.fullName;
 
   const homeLogo = TEAM_SPORTS.includes(sport) ? getTeamLogo(homeComp?.team) : undefined;
   const awayLogo = TEAM_SPORTS.includes(sport) ? getTeamLogo(awayComp?.team) : undefined;
-  const eventLogo = !TEAM_SPORTS.includes(sport)
-    ? getTournamentLogo(raw, sport)
-    : undefined;
+  const eventLogo = !TEAM_SPORTS.includes(sport) ? getTournamentLogo(raw, sport) : undefined;
+
+  // Soccer: round slug and competition label
+  const soccerRoundSlug = sport === 'soccer' ? (raw.season?.slug ?? undefined) : undefined;
+  let soccerCompetitionLabel: string | undefined;
+  if (sport === 'soccer' && leagueId) {
+    const isKnockout = SOCCER_KNOCKOUT_COMPETITIONS.some((c) => c.id === leagueId);
+    if (isKnockout && soccerRoundSlug && ROUND_LABELS[soccerRoundSlug]) {
+      const compName = SOCCER_KNOCKOUT_COMPETITIONS.find((c) => c.id === leagueId)?.label ?? '';
+      soccerCompetitionLabel = `${compName} — ${ROUND_LABELS[soccerRoundSlug]}`;
+    }
+  }
 
   if (sport === 'golf') {
     const isMajor = isMajorTournament(name, sport);
@@ -135,11 +160,7 @@ if (sport === 'nba') {
       sport,
       date: format(addDays(startDate, offset), 'yyyy-MM-dd'),
       time: offset === 0 ? timeStr : undefined,
-      venue,
-      channel,
-      isNationalTv,
-      isMajor,
-      eventLogo,
+      venue, channel, isNationalTv, isMajor, eventLogo,
     }));
   }
 
@@ -153,32 +174,23 @@ if (sport === 'nba') {
       sport,
       date: format(addDays(startDate, offset), 'yyyy-MM-dd'),
       time: undefined,
-      venue,
-      channel,
-      isNationalTv,
-      isMajor,
-      eventLogo,
+      venue, channel, isNationalTv, isMajor, eventLogo,
     }));
   }
 
   return [{
     id: `${sport}-espn-${raw.id}`,
-    name,
-    gameNumber,
-    sport,
-    date: dateStr,
-    time: timeStr,
+    name, gameNumber, sport,
+    date: dateStr, time: timeStr,
     homeTeam: home || undefined,
     awayTeam: away || undefined,
-    homeAbbrev,
-    awayAbbrev,
-    homeLogo,
-    awayLogo,
-    eventLogo,
-    venue,
-    channel,
-    isNationalTv,
+    homeAbbrev, awayAbbrev,
+    homeLogo, awayLogo, eventLogo,
+    venue, channel, isNationalTv,
     isMajor: false,
+    soccerLeagueId: leagueId,
+    soccerRoundSlug,
+    soccerCompetitionLabel,
   }];
 }
 
@@ -187,7 +199,8 @@ async function fetchLeague(
   sport: Sport,
   year: number,
   month: number,
-  extraParams: Record<string, any> = {}
+  extraParams: Record<string, any> = {},
+  leagueId?: string,
 ): Promise<SportEvent[]> {
   const from = format(startOfMonth(new Date(year, month)), 'yyyyMMdd');
   const to = format(endOfMonth(new Date(year, month)), 'yyyyMMdd');
@@ -197,7 +210,7 @@ async function fetchLeague(
     const response = await axios.get(`${BASE}/${path}/scoreboard`, {
       params: { dates: dateParam, limit: 200, ...otherParams },
     });
-    return (response.data?.events ?? []).flatMap((e: any) => normalizeEvent(e, sport));
+    return (response.data?.events ?? []).flatMap((e: any) => normalizeEvent(e, sport, leagueId));
   } catch (err) {
     console.error(`Failed to fetch ${path}:`, err);
     return [];
@@ -212,12 +225,14 @@ export async function fetchGamesForMonth(
 ): Promise<SportEvent[]> {
   if (sport === 'soccer') {
     const setting = preferences?.sportSettings?.[sport];
-    const leagues = setting?.selectedSoccerLeagues?.length
-      ? setting.selectedSoccerLeagues
-      : ['usa.1'];
+    const clubLeagues = setting?.selectedClubLeagues?.length ? setting.selectedClubLeagues : ['usa.1'];
+    const knockoutLeagues = SOCCER_KNOCKOUT_COMPETITIONS.map((c) => c.id);
+    const allLeagues = [...new Set([...clubLeagues, ...knockoutLeagues])];
 
     const results = await Promise.allSettled(
-      leagues.map((leagueId) => fetchLeague(`soccer/${leagueId}`, sport, year, month))
+      allLeagues.map((leagueId) =>
+        fetchLeague(`soccer/${leagueId}`, sport, year, month, {}, leagueId)
+      )
     );
 
     const seen = new Set<string>();
@@ -240,7 +255,6 @@ export async function fetchGamesForMonth(
       if (current.getDay() === 6) saturdays.push(new Date(current));
       current = addDays(current, 1);
     }
-
     const results = await Promise.allSettled(
       saturdays.map((saturday) =>
         fetchLeague(ESPN_PATHS[sport], sport, year, month, {
@@ -249,7 +263,6 @@ export async function fetchGamesForMonth(
         })
       )
     );
-
     const seen = new Set<string>();
     return results
       .flatMap((r) => (r.status === 'fulfilled' ? r.value : []))

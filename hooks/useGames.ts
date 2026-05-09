@@ -1,29 +1,101 @@
 import { useQuery } from '@tanstack/react-query';
 import { fetchGamesForSports } from '../lib/sportsApi';
-import { SportEvent, useAppStore } from '../lib/store';
+import { KNOCKOUT_ROUND_ORDER, SOCCER_CLUB_LEAGUES, SOCCER_KNOCKOUT_COMPETITIONS, SportEvent, useAppStore } from '../lib/store';
+
+const ROUND_RANK: Record<string, number> = {
+  'quarterfinals': 0,
+  'semifinals':    1,
+  'final':         2,
+};
 
 function applyFilters(events: SportEvent[], sportSettings: Record<string, any>): SportEvent[] {
   return events.filter((event) => {
     const setting = sportSettings[event.sport];
     if (!setting) return true;
-    
-    // Show playoff games if the toggle is on
+
     if (event.gameNumber && setting.alwaysShowPlayoffs) return true;
 
-    // Golf/Tennis — filter by majors
     if (event.sport === 'golf' || event.sport === 'tennis') {
       const filter = setting.tournamentFilter;
       if (filter === 'majors') return event.isMajor === true;
       return true;
     }
 
-    // Team sports — filter by team/national TV
+    if (event.sport === 'f1') {
+      const sessionType = event.f1SessionType;
+      if (!sessionType) return true;
+      if (sessionType === 'FP1' || sessionType === 'FP2' || sessionType === 'FP3') {
+        return setting.f1ShowPractice === true;
+      }
+      if (sessionType === 'SS') return setting.f1ShowSprintShootout === true;
+      if (sessionType === 'SR') return setting.f1ShowSprintRace === true;
+      if (sessionType === 'Qual') return setting.f1ShowQualifying === true;
+      if (sessionType === 'Race') return setting.f1ShowRace !== false;
+      return true;
+    }
+
+    if (event.sport === 'soccer') {
+      const leagueId = event.soccerLeagueId;
+      const roundSlug = event.soccerRoundSlug;
+      const isClubLeague = SOCCER_CLUB_LEAGUES.some((l) => l.id === leagueId);
+      const isKnockoutComp = SOCCER_KNOCKOUT_COMPETITIONS.some((l) => l.id === leagueId);
+
+      // Collect all tracked teams across all club leagues (for cross-competition tracking)
+      const allTrackedTeams: string[] = [];
+      const byLeague: Record<string, any[]> = setting.myTeamsByLeague ?? {};
+      for (const teams of Object.values(byLeague)) {
+        allTrackedTeams.push(...teams.map((t: any) => t.name));
+      }
+
+      const teamIsPlaying = allTrackedTeams.length > 0 &&
+        allTrackedTeams.some((name) => event.homeTeam === name || event.awayTeam === name);
+
+      if (isClubLeague) {
+        // Use per-league filter if set, otherwise fall back to global teamFilter
+        const leagueFilters: Record<string, string> = setting.leagueFilters ?? {};
+        const filter = leagueFilters[leagueId ?? ''] ?? setting.teamFilter ?? 'all';
+
+        if (filter === 'all') return true;
+        if (filter === 'national_tv') return event.isNationalTv === true;
+
+        const leagueTeams = (byLeague[leagueId ?? ''] ?? []).map((t: any) => t.name);
+
+        if (filter === 'my_team') {
+          if (leagueTeams.length === 0) return true;
+          return leagueTeams.some((name) => event.homeTeam === name || event.awayTeam === name);
+        }
+
+        if (filter === 'my_team_and_national_tv') {
+          if (leagueTeams.length === 0) return event.isNationalTv === true;
+          return (
+            event.isNationalTv === true ||
+            leagueTeams.some((name) => event.homeTeam === name || event.awayTeam === name)
+          );
+        }
+
+        return true;
+      }
+
+      if (isKnockoutComp) {
+        // Always show if a tracked team is playing
+        if (teamIsPlaying) return true;
+
+        // Otherwise check round threshold
+        const thresholds: Record<string, string> = setting.knockoutThresholds ?? {};
+        const threshold = thresholds[leagueId ?? ''] ?? 'off';
+        if (threshold === 'off') return false;
+
+        const eventRank = ROUND_RANK[roundSlug ?? ''] ?? -1;
+        const thresholdRank = ROUND_RANK[threshold] ?? 99;
+        return eventRank >= thresholdRank;
+      }
+
+      return true;
+    }
+
     const filter = setting.teamFilter;
     if (!filter || filter === 'all') return true;
-
-    if (filter === 'national_tv') {
-      return event.isNationalTv === true;
-    }
+    if (filter === 'national_tv') return event.isNationalTv === true;
 
     if (filter === 'my_team') {
       const myTeams = getMyTeamsForEvent(event, setting);
@@ -44,18 +116,10 @@ function applyFilters(events: SportEvent[], sportSettings: Record<string, any>):
   });
 }
 
-/**
- * Get the list of team names to match against for a given event.
- * For soccer, uses myTeamsByLeague (all leagues combined).
- * For other sports, uses myTeams.
- */
 function getMyTeamsForEvent(event: SportEvent, setting: any): string[] {
   if (event.sport === 'soccer') {
-    // Flatten all teams across all selected leagues
     const byLeague: Record<string, any[]> = setting.myTeamsByLeague ?? {};
-    return Object.values(byLeague)
-      .flat()
-      .map((t: any) => t.name);
+    return Object.values(byLeague).flat().map((t: any) => t.name);
   }
   return (setting.myTeams ?? []).map((t: any) => t.name);
 }
@@ -67,10 +131,9 @@ export function useGames(year: number, month: number) {
   const preferences = useAppStore((s) => s.preferences);
 
   const query = useQuery({
-    queryKey: ['games', sports, year, month, preferences.sportSettings?.soccer?.selectedSoccerLeagues],
+    queryKey: ['games', sports, year, month, preferences.sportSettings?.soccer?.selectedClubLeagues],
     queryFn: () => fetchGamesForSports(sports, year, month, preferences),
-   // staleTime: 1000 * 60 * 60,
-   staleTime: 0,
+    staleTime: 1000 * 60 * 60,
     enabled: sports.length > 0,
   });
 

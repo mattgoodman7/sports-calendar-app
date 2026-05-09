@@ -20,14 +20,21 @@ export interface Tournament {
 export type TeamSportFilter = 'all' | 'national_tv' | 'my_team' | 'my_team_and_national_tv';
 export type TournamentSportFilter = 'majors' | 'all' | 'custom';
 export type CombatSportFilter = 'title_fights' | 'main_events' | 'all';
+export type F1SessionType = 'FP1' | 'FP2' | 'FP3' | 'SS' | 'SR' | 'Qual' | 'Race';
+export type SoccerKnockoutThreshold = 'off' | 'quarterfinals' | 'semifinals' | 'final';
 
-export const SOCCER_LEAGUES: { id: string; label: string }[] = [
-  { id: 'usa.1',            label: 'MLS' },
-  { id: 'eng.1',            label: 'Premier League' },
-  { id: 'esp.1',            label: 'La Liga' },
-  { id: 'ger.1',            label: 'Bundesliga' },
-  { id: 'fra.1',            label: 'Ligue 1' },
-  { id: 'ita.1',            label: 'Serie A' },
+// Club leagues where users can pick teams
+export const SOCCER_CLUB_LEAGUES: { id: string; label: string }[] = [
+  { id: 'usa.1',  label: 'MLS' },
+  { id: 'eng.1',  label: 'Premier League' },
+  { id: 'esp.1',  label: 'La Liga' },
+  { id: 'ger.1',  label: 'Bundesliga' },
+  { id: 'fra.1',  label: 'Ligue 1' },
+  { id: 'ita.1',  label: 'Serie A' },
+];
+
+// Knockout competitions where users pick a round threshold
+export const SOCCER_KNOCKOUT_COMPETITIONS: { id: string; label: string }[] = [
   { id: 'uefa.champions',   label: 'Champions League' },
   { id: 'uefa.europa',      label: 'Europa League' },
   { id: 'fifa.world',       label: 'World Cup' },
@@ -37,16 +44,40 @@ export const SOCCER_LEAGUES: { id: string; label: string }[] = [
   { id: 'concacaf.gold',    label: 'Gold Cup' },
 ];
 
+// All soccer leagues (union of club + knockout)
+export const SOCCER_LEAGUES = [...SOCCER_CLUB_LEAGUES, ...SOCCER_KNOCKOUT_COMPETITIONS];
+
+// ESPN round slugs in ascending order of importance
+export const KNOCKOUT_ROUND_ORDER = [
+  'quarterfinals',
+  'semifinals',
+  'final',
+];
+
+// Human-readable round labels for display in event blocks
+export const ROUND_LABELS: Record<string, string> = {
+  'quarterfinals': 'Quarterfinal',
+  'semifinals':    'Semifinal',
+  'final':         'Final',
+};
+
 export interface SportSetting {
   sport: Sport;
   alwaysShowPlayoffs?: boolean;
   teamFilter?: TeamSportFilter;
   myTeams?: Team[];
-  myTeamsByLeague?: Record<string, Team[]>;
+  myTeamsByLeague?: Record<string, Team[]>;       // keyed by club league id
+  leagueFilters?: Record<string, TeamSportFilter>; // per-club-league filter
   tournamentFilter?: TournamentSportFilter;
   selectedTournaments?: Tournament[];
   combatFilter?: CombatSportFilter;
-  selectedSoccerLeagues?: string[];
+  selectedClubLeagues?: string[];
+  knockoutThresholds?: Record<string, SoccerKnockoutThreshold>;
+  f1ShowPractice?: boolean;
+  f1ShowSprintShootout?: boolean;
+  f1ShowSprintRace?: boolean;
+  f1ShowQualifying?: boolean;
+  f1ShowRace?: boolean;
 }
 
 export interface SportEvent {
@@ -57,8 +88,8 @@ export interface SportEvent {
   time?: string;
   homeTeam?: string;
   awayTeam?: string;
-  homeAbbrev?: string;  // team abbreviation e.g. "LAL"
-  awayAbbrev?: string;  // team abbreviation e.g. "BOS"
+  homeAbbrev?: string;
+  awayAbbrev?: string;
   homeLogo?: string;
   awayLogo?: string;
   eventLogo?: string;
@@ -68,6 +99,12 @@ export interface SportEvent {
   isMajor?: boolean;
   isCustom?: boolean;
   gameNumber?: number;
+  f1SessionType?: F1SessionType;
+  soccerLeagueId?: string;
+  soccerRoundSlug?: string;
+  // Competition label for knockout events e.g. "Champions League — Final"
+  soccerCompetitionLabel?: string;
+  durationHours?: number;
 }
 
 export interface UserPreferences {
@@ -128,7 +165,14 @@ export const useAppStore = create<AppState>()(
               teamFilter: 'all',
               tournamentFilter: 'majors',
               combatFilter: 'main_events',
-              selectedSoccerLeagues: sport === 'soccer' ? ['usa.1'] : undefined,
+              selectedClubLeagues: sport === 'soccer' ? ['usa.1'] : undefined,
+              knockoutThresholds: sport === 'soccer' ? {} : undefined,
+              leagueFilters: sport === 'soccer' ? {} : undefined,
+              f1ShowPractice: false,
+              f1ShowSprintShootout: false,
+              f1ShowSprintRace: false,
+              f1ShowQualifying: false,
+              f1ShowRace: true,
             };
           }
           return { preferences: { ...state.preferences, sports, sportSettings } };

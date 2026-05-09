@@ -13,15 +13,15 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import TeamPicker from '../components/TeamPicker';
 import {
   CombatSportFilter,
-  SOCCER_LEAGUES,
+  SOCCER_CLUB_LEAGUES,
+  SOCCER_KNOCKOUT_COMPETITIONS,
+  SoccerKnockoutThreshold,
   Sport,
   Team,
   TeamSportFilter,
   TournamentSportFilter,
   useAppStore,
 } from '../lib/store';
-
-// ─── Sport metadata ───────────────────────────────────────────────────────────
 
 const SPORT_LABELS: Record<Sport, string> = {
   nfl: 'NFL', nba: 'NBA', mlb: 'MLB', nhl: 'NHL', soccer: 'Soccer',
@@ -38,27 +38,14 @@ const SPORT_EMOJIS: Record<Sport, string> = {
 };
 
 const SPORT_COLORS: Record<Sport, string> = {
-  nfl:    '#1D3D7B',
-  nba:    '#C35B10',
-  mlb:    '#0D5A2A',
-  nhl:    '#5A1A6B',
-  soccer: '#2A5A1A',
-  nascar: '#FFD700',
-  f1:     '#E8002D',
-  tennis: '#4A90D9',
-  golf:   '#3A7D44',
-  ncaafb: '#8B2FC9',
-  ncaamb: '#C9A22F',
-  mma:    '#C0392B',
-  wnba:   '#FF6B35',
-  boxing: '#2C3E50',
+  nfl:    '#1D3D7B', nba:    '#C35B10', mlb:    '#0D5A2A', nhl:    '#5A1A6B',
+  soccer: '#2A5A1A', nascar: '#FFD700', f1:     '#E8002D', tennis: '#4A90D9',
+  golf:   '#3A7D44', ncaafb: '#8B2FC9', ncaamb: '#C9A22F', mma:    '#C0392B',
+  wnba:   '#FF6B35', boxing: '#2C3E50',
 };
-
-// ─── Filter options ───────────────────────────────────────────────────────────
 
 const TEAM_SPORTS: Sport[]       = ['nfl', 'nba', 'mlb', 'nhl', 'soccer', 'wnba', 'ncaafb', 'ncaamb'];
 const TOURNAMENT_SPORTS: Sport[] = ['golf', 'tennis'];
-const MOTOR_SPORTS: Sport[]      = ['f1', 'nascar'];
 const COMBAT_SPORTS: Sport[]     = ['mma', 'boxing'];
 const COLLEGE_SPORTS: Sport[]    = ['ncaafb', 'ncaamb'];
 
@@ -86,7 +73,20 @@ const COMBAT_FILTER_OPTIONS: { key: CombatSportFilter; label: string; descriptio
   { key: 'all',          label: 'All fights',        description: 'Every scheduled bout' },
 ];
 
-// ─── Screen ───────────────────────────────────────────────────────────────────
+const F1_SESSION_OPTIONS: { key: string; label: string; description: string }[] = [
+  { key: 'f1ShowPractice',       label: 'Practice',        description: 'Practice sessions (FP1, FP2, FP3)' },
+  { key: 'f1ShowSprintShootout', label: 'Sprint Shootout', description: 'Sprint qualifying session' },
+  { key: 'f1ShowSprintRace',     label: 'Sprint Race',     description: 'Sprint race' },
+  { key: 'f1ShowQualifying',     label: 'Qualifying',      description: 'Qualifying session' },
+  { key: 'f1ShowRace',           label: 'Race',            description: 'Main race' },
+];
+
+const KNOCKOUT_THRESHOLD_OPTIONS: { key: SoccerKnockoutThreshold; label: string; description: string }[] = [
+  { key: 'off',           label: 'Off',                    description: "Don't show based on round" },
+  { key: 'quarterfinals', label: 'Quarterfinals & beyond', description: 'Show from quarterfinals onwards' },
+  { key: 'semifinals',    label: 'Semifinals & beyond',    description: 'Show from semifinals onwards' },
+  { key: 'final',         label: 'Final only',             description: 'Only the final' },
+];
 
 export default function SportSettingsScreen() {
   const { sport: sportParam } = useLocalSearchParams<{ sport: string }>();
@@ -100,20 +100,28 @@ export default function SportSettingsScreen() {
     setting?.teamFilter === 'my_team' ||
     setting?.teamFilter === 'my_team_and_national_tv';
 
-  const toggleSoccerLeague = (leagueId: string) => {
-    const current = setting?.selectedSoccerLeagues ?? ['usa.1'];
+  const toggleClubLeague = (leagueId: string) => {
+    const current = setting?.selectedClubLeagues ?? ['usa.1'];
     const updated = current.includes(leagueId)
       ? current.filter((l) => l !== leagueId)
       : [...current, leagueId];
     if (updated.length === 0) return;
-    updateSportSetting(sport, { selectedSoccerLeagues: updated });
+    updateSportSetting(sport, { selectedClubLeagues: updated });
   };
 
-  const updateSoccerLeagueTeams = (leagueId: string, teams: Team[]) => {
+  const updateLeagueTeams = (leagueId: string, teams: Team[]) => {
     const current = setting?.myTeamsByLeague ?? {};
-    updateSportSetting(sport, {
-      myTeamsByLeague: { ...current, [leagueId]: teams },
-    });
+    updateSportSetting(sport, { myTeamsByLeague: { ...current, [leagueId]: teams } });
+  };
+
+  const setLeagueFilter = (leagueId: string, filter: TeamSportFilter) => {
+    const current = setting?.leagueFilters ?? {};
+    updateSportSetting(sport, { leagueFilters: { ...current, [leagueId]: filter } });
+  };
+
+  const setKnockoutThreshold = (compId: string, threshold: SoccerKnockoutThreshold) => {
+    const current = setting?.knockoutThresholds ?? {};
+    updateSportSetting(sport, { knockoutThresholds: { ...current, [compId]: threshold } });
   };
 
   if (!sport || !SPORT_LABELS[sport]) {
@@ -124,20 +132,25 @@ export default function SportSettingsScreen() {
     );
   }
 
-  const selectedLeagues = setting?.selectedSoccerLeagues ?? ['usa.1'];
+  const selectedClubLeagues = setting?.selectedClubLeagues ?? ['usa.1'];
+  const knockoutThresholds = setting?.knockoutThresholds ?? {};
+  const leagueFilters = setting?.leagueFilters ?? {};
+  const f1Values: Record<string, boolean> = {
+    f1ShowPractice:       setting?.f1ShowPractice ?? false,
+    f1ShowSprintShootout: setting?.f1ShowSprintShootout ?? false,
+    f1ShowSprintRace:     setting?.f1ShowSprintRace ?? false,
+    f1ShowQualifying:     setting?.f1ShowQualifying ?? false,
+    f1ShowRace:           setting?.f1ShowRace ?? true,
+  };
 
   return (
     <SafeAreaView style={styles.safe}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={{ flex: 1 }}
-      >
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <ScrollView
           ref={scrollRef}
           contentContainerStyle={[styles.scrollContent, { paddingBottom: 100 }]}
           keyboardShouldPersistTaps="handled"
         >
-
           {/* ── Header ── */}
           <View style={styles.headerRow}>
             <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
@@ -147,39 +160,123 @@ export default function SportSettingsScreen() {
             <Text style={styles.header}>{SPORT_LABELS[sport]}</Text>
           </View>
 
-          {/* ── Soccer: League picker ── */}
+          {/* ── Soccer: Club leagues with inline filter + team picker ── */}
           {sport === 'soccer' && (
             <>
-              <Text style={styles.sectionLabel}>Leagues</Text>
-              <View style={styles.section}>
-                {SOCCER_LEAGUES.map((league, i) => {
-                  const isSelected = selectedLeagues.includes(league.id);
-                  const isLast = i === SOCCER_LEAGUES.length - 1;
-                  return (
+              <Text style={styles.sectionLabel}>Club Leagues</Text>
+              {SOCCER_CLUB_LEAGUES.map((league) => {
+                const isSelected = selectedClubLeagues.includes(league.id);
+                const leagueFilter = leagueFilters[league.id] ?? 'all';
+                const showTeamPicker =
+                  leagueFilter === 'my_team' || leagueFilter === 'my_team_and_national_tv';
+
+                return (
+                  <View key={league.id} style={styles.leagueBlock}>
+                    {/* League toggle row */}
                     <TouchableOpacity
-                      key={league.id}
-                      style={[styles.optionRow, !isLast && styles.rowBorder]}
-                      onPress={() => toggleSoccerLeague(league.id)}
+                      style={styles.leagueHeaderRow}
+                      onPress={() => toggleClubLeague(league.id)}
                     >
-                      <Text style={styles.optionLabel}>{league.label}</Text>
+                      <Text style={[styles.leagueHeaderLabel, isSelected && { color }]}>
+                        {league.label}
+                      </Text>
                       {isSelected && (
                         <View style={[styles.checkCircle, { backgroundColor: color }]}>
                           <Text style={styles.checkMark}>✓</Text>
                         </View>
                       )}
                     </TouchableOpacity>
-                  );
-                })}
-              </View>
+
+                    {/* Per-league filter options — only shown when league is selected */}
+                    {isSelected && (
+                      <>
+                        <View style={styles.section}>
+                          {TEAM_FILTER_OPTIONS.map((opt, i, arr) => {
+                            const isFilterSelected = leagueFilter === opt.key;
+                            const isLast = i === arr.length - 1;
+                            return (
+                              <TouchableOpacity
+                                key={opt.key}
+                                style={[styles.optionRow, !isLast && styles.rowBorder]}
+                                onPress={() => setLeagueFilter(league.id, opt.key)}
+                              >
+                                <View style={{ flex: 1 }}>
+                                  <Text style={[styles.optionLabel, isFilterSelected && { color }]}>
+                                    {opt.label}
+                                  </Text>
+                                  <Text style={styles.optionDescription}>{opt.description}</Text>
+                                </View>
+                                {isFilterSelected && (
+                                  <View style={[styles.checkCircle, { backgroundColor: color }]}>
+                                    <Text style={styles.checkMark}>✓</Text>
+                                  </View>
+                                )}
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+
+                        {/* Team picker — only shown when my_team filter is active */}
+                        {showTeamPicker && (
+                          <View style={styles.teamPickerWrapper}>
+                            <TeamPicker
+                              sport="soccer"
+                              leagueId={league.id}
+                              leagueLabel={league.label}
+                              selectedTeams={(setting?.myTeamsByLeague ?? {})[league.id] ?? []}
+                              onSelect={(teams) => updateLeagueTeams(league.id, teams)}
+                              scrollRef={scrollRef}
+                            />
+                          </View>
+                        )}
+                      </>
+                    )}
+                  </View>
+                );
+              })}
+
+              {/* Knockout competitions */}
+              <Text style={styles.sectionLabel}>Cup Competitions</Text>
+              {SOCCER_KNOCKOUT_COMPETITIONS.map((comp) => {
+                const threshold = knockoutThresholds[comp.id] ?? 'off';
+                return (
+                  <View key={comp.id}>
+                    <Text style={styles.knockoutCompLabel}>{comp.label}</Text>
+                    <View style={styles.section}>
+                      {KNOCKOUT_THRESHOLD_OPTIONS.map((opt, i, arr) => {
+                        const isSelected = threshold === opt.key;
+                        const isLast = i === arr.length - 1;
+                        return (
+                          <TouchableOpacity
+                            key={opt.key}
+                            style={[styles.optionRow, !isLast && styles.rowBorder]}
+                            onPress={() => setKnockoutThreshold(comp.id, opt.key)}
+                          >
+                            <View style={{ flex: 1 }}>
+                              <Text style={[styles.optionLabel, isSelected && { color }]}>{opt.label}</Text>
+                              <Text style={styles.optionDescription}>{opt.description}</Text>
+                            </View>
+                            {isSelected && (
+                              <View style={[styles.checkCircle, { backgroundColor: color }]}>
+                                <Text style={styles.checkMark}>✓</Text>
+                              </View>
+                            )}
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </View>
+                );
+              })}
             </>
           )}
 
-          {/* ── Team sports: Filter + Playoffs toggle ── */}
-          {TEAM_SPORTS.includes(sport) && (
+          {/* ── Non-soccer team sports ── */}
+          {TEAM_SPORTS.includes(sport) && sport !== 'soccer' && (
             <>
               <Text style={styles.sectionLabel}>Show</Text>
               <View style={styles.section}>
-                {(COLLEGE_SPORTS.includes(sport) ? COLLEGE_FILTER_OPTIONS : TEAM_FILTER_OPTIONS).map((opt, i) => {
+                {(COLLEGE_SPORTS.includes(sport) ? COLLEGE_FILTER_OPTIONS : TEAM_FILTER_OPTIONS).map((opt) => {
                   const isSelected = setting?.teamFilter === opt.key;
                   return (
                     <TouchableOpacity
@@ -199,8 +296,6 @@ export default function SportSettingsScreen() {
                     </TouchableOpacity>
                   );
                 })}
-
-                {/* Playoffs toggle — last row in the same section */}
                 <TouchableOpacity
                   style={styles.optionRow}
                   onPress={() => updateSportSetting(sport, { alwaysShowPlayoffs: !setting?.alwaysShowPlayoffs })}
@@ -221,26 +316,7 @@ export default function SportSettingsScreen() {
             </>
           )}
 
-          {/* ── Soccer: Per-league team pickers ── */}
-          {sport === 'soccer' && showMyTeams && (
-            <>
-              <Text style={styles.sectionLabel}>My Teams</Text>
-              {SOCCER_LEAGUES.filter((l) => selectedLeagues.includes(l.id)).map((league) => (
-                <View key={league.id} style={styles.teamPickerWrapper}>
-                  <TeamPicker
-                    sport="soccer"
-                    leagueId={league.id}
-                    leagueLabel={league.label}
-                    selectedTeams={(setting?.myTeamsByLeague ?? {})[league.id] ?? []}
-                    onSelect={(teams) => updateSoccerLeagueTeams(league.id, teams)}
-                    scrollRef={scrollRef}
-                  />
-                </View>
-              ))}
-            </>
-          )}
-
-          {/* ── Non-soccer team sports: single team picker ── */}
+          {/* ── Non-soccer team sports: Team picker ── */}
           {TEAM_SPORTS.includes(sport) && sport !== 'soccer' && showMyTeams && (
             <>
               <Text style={styles.sectionLabel}>My Teams</Text>
@@ -285,8 +361,38 @@ export default function SportSettingsScreen() {
             </>
           )}
 
-          {/* ── Motor sports ── */}
-          {MOTOR_SPORTS.includes(sport) && (
+          {/* ── F1 ── */}
+          {sport === 'f1' && (
+            <>
+              <Text style={styles.sectionLabel}>Show</Text>
+              <View style={styles.section}>
+                {F1_SESSION_OPTIONS.map((opt, i, arr) => {
+                  const isSelected = f1Values[opt.key];
+                  const isLast = i === arr.length - 1;
+                  return (
+                    <TouchableOpacity
+                      key={opt.key}
+                      style={[styles.optionRow, !isLast && styles.rowBorder]}
+                      onPress={() => updateSportSetting(sport, { [opt.key]: !isSelected })}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.optionLabel, isSelected && { color }]}>{opt.label}</Text>
+                        <Text style={styles.optionDescription}>{opt.description}</Text>
+                      </View>
+                      {isSelected && (
+                        <View style={[styles.checkCircle, { backgroundColor: color }]}>
+                          <Text style={styles.checkMark}>✓</Text>
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </>
+          )}
+
+          {/* ── NASCAR ── */}
+          {sport === 'nascar' && (
             <>
               <Text style={styles.sectionLabel}>Coverage</Text>
               <View style={styles.section}>
@@ -333,8 +439,6 @@ export default function SportSettingsScreen() {
   );
 }
 
-// ─── Styles ──────────────────────────────────────────────────────────────────
-
 const styles = StyleSheet.create({
   safe:              { flex: 1, backgroundColor: '#f8f8f8' },
   scrollContent:     { paddingBottom: 48 },
@@ -347,7 +451,13 @@ const styles = StyleSheet.create({
   header:            { fontSize: 26, fontWeight: '700', color: '#111' },
 
   sectionLabel:      { fontSize: 12, fontWeight: '600', color: '#999', textTransform: 'uppercase', letterSpacing: 0.8, paddingHorizontal: 20, paddingTop: 20, paddingBottom: 6 },
+  knockoutCompLabel: { fontSize: 14, fontWeight: '600', color: '#444', paddingHorizontal: 20, paddingTop: 16, paddingBottom: 6 },
   section:           { backgroundColor: '#fff', marginHorizontal: 16, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, borderColor: '#eee', overflow: 'hidden' },
+
+  // Per-league block
+  leagueBlock:       { marginHorizontal: 16, marginBottom: 8 },
+  leagueHeaderRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12, paddingHorizontal: 4 },
+  leagueHeaderLabel: { fontSize: 15, fontWeight: '600', color: '#333' },
 
   optionRow:         { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, gap: 12 },
   rowBorder:         { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#eee' },
@@ -357,5 +467,5 @@ const styles = StyleSheet.create({
   checkCircle:       { width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   checkMark:         { color: '#fff', fontSize: 13, fontWeight: '700' },
 
-  teamPickerWrapper: { marginHorizontal: 16, marginBottom: 8 },
+  teamPickerWrapper: { marginBottom: 8 },
 });

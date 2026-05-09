@@ -40,9 +40,9 @@ const SPORT_COLORS: Record<Sport, string> = {
 };
 
 const SPORT_DURATION_HOURS: Record<Sport, number> = {
-  nfl:    3, nba:    2, mlb:    3, nhl:    2, soccer: 2,
-  nascar: 2, f1:     2, tennis: 2, golf:   2, ncaafb: 3,
-  ncaamb: 2, mma:    3, wnba:   2, boxing: 3,
+  nfl:    3.5, nba:    2.5, mlb:    3,   nhl:    3,   soccer: 2,
+  nascar: 2,   f1:     2,   tennis: 2,   golf:   2,   ncaafb: 3.5,
+  ncaamb: 2.5, mma:    3,   wnba:   2,   boxing: 3,
 };
 
 const TEAM_SPORTS: Sport[] = ['nfl', 'nba', 'mlb', 'nhl', 'soccer', 'wnba', 'ncaafb', 'ncaamb'];
@@ -65,9 +65,8 @@ const DAY_NUM_HEIGHT = 26;
 const MAX_PILLS      = Math.max(1, Math.floor((CELL_HEIGHT - DAY_NUM_HEIGHT) / PILL_HEIGHT));
 const SWIPE_MIN      = 30;
 
-// Timeline width = screen width minus side margins minus time column
-const TIMELINE_MARGIN  = 16; // matches dayDetail margin
-const TIMELINE_WIDTH   = SCREEN_WIDTH - TIMELINE_MARGIN * 2 - TIME_COL_W;
+const TIMELINE_MARGIN = 16;
+const TIMELINE_WIDTH  = SCREEN_WIDTH - TIMELINE_MARGIN * 2 - TIME_COL_W;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -186,39 +185,37 @@ function layoutDisplayEvents(displays: DisplayEvent[]): {
   for (const d of displays) {
     const start = d.startHour;
     if (start === 0 && !d.isGroup && !d.event.time) { ungrouped.push(d); continue; }
-    const sport = d.isGroup ? d.sport : d.event.sport;
-    timed.push({ display: d, start, end: start + (SPORT_DURATION_HOURS[sport] ?? 2) });
+  const sport = d.isGroup ? d.sport : d.event.sport;
+  const customDuration = !d.isGroup ? d.event.durationHours : undefined;
+  timed.push({ display: d, start, end: start + (customDuration ?? SPORT_DURATION_HOURS[sport] ?? 2) });
   }
   timed.sort((a, b) => a.start - b.start);
 
   const assigned: (PositionedDisplay & { end: number })[] = [];
 
   for (const item of timed) {
-    // Find which columns are occupied by overlapping events
     const occupiedCols = new Set<number>();
     for (const other of assigned) {
       if (item.start < other.end && item.end > other.startHour) {
         occupiedCols.add(other.column);
       }
     }
-    // Pick the lowest available column
     let col = 0;
     while (occupiedCols.has(col)) col++;
 
     const sport = item.display.isGroup ? item.display.sport : item.display.event.sport;
+    const customDuration = !item.display.isGroup ? item.display.event.durationHours : undefined;
     assigned.push({
       display: item.display,
       startHour: item.start,
-      durationHours: SPORT_DURATION_HOURS[sport] ?? 2,
+      durationHours: customDuration ?? SPORT_DURATION_HOURS[sport] ?? 2,
       column: col,
       totalColumns: 0,
       end: item.end,
     });
   }
 
-  // For each event, totalColumns = number of columns needed by its overlap group
   for (let i = 0; i < assigned.length; i++) {
-    // Find all events that overlap with this one, directly or transitively
     const group = new Set<number>();
     const queue = [i];
     while (queue.length > 0) {
@@ -291,14 +288,6 @@ function DisplayEventBlock({
   const sport  = pd.display.isGroup ? pd.display.sport : pd.display.event.sport;
   const color  = SPORT_COLORS[sport];
 
-  let opacity = 1;
-  if (isToday) {
-    const now     = getCurrentHour();
-    const endHour = pd.startHour + pd.durationHours;
-    if (now >= endHour)          opacity = 0.35;
-    else if (now > pd.startHour) opacity = 0.65;
-  }
-
   const fadeOverlay = (
     <LinearGradient
       colors={['transparent', color]}
@@ -310,7 +299,7 @@ function DisplayEventBlock({
   if (pd.display.isGroup) {
     const group = pd.display as GroupedEvent;
     return (
-      <View style={[styles.eventBlock, { top, height, left, width, backgroundColor: color, opacity }]}>
+      <View style={[styles.eventBlock, { top, height, left, width, backgroundColor: color }]}>
         <Text style={styles.eventBlockTime}>{group.time}</Text>
         <Text style={styles.eventBlockGroupLabel}>NFL Games</Text>
         <View style={styles.groupList}>
@@ -343,6 +332,9 @@ function DisplayEventBlock({
       )}
       {e.time    && <Text style={styles.eventBlockTime}>{e.time}</Text>}
       {e.channel && <Text style={styles.eventBlockChannel} numberOfLines={1}>{e.channel}</Text>}
+      {e.soccerCompetitionLabel && (
+        <Text style={styles.competitionLabel} numberOfLines={1}>{e.soccerCompetitionLabel}</Text>
+      )}
       {e.gameNumber && (
         <Text style={styles.gameNumberBadge}>Game {e.gameNumber}</Text>
       )}
@@ -533,6 +525,9 @@ export default function CalendarScreen() {
                             <View style={[styles.eventDot, { backgroundColor: SPORT_COLORS[e.sport] }]} />
                             <View style={{ flex: 1 }}>
                               <Text style={styles.eventName}>{e.name}</Text>
+                              {e.soccerCompetitionLabel && (
+                                <Text style={styles.eventCompetitionLabel}>{e.soccerCompetitionLabel}</Text>
+                              )}
                               {e.channel && <Text style={styles.eventMeta}>{e.channel}</Text>}
                             </View>
                             {e.eventLogo && (
@@ -657,15 +652,16 @@ const styles = StyleSheet.create({
   addEventBtnText: { color: '#fff', fontSize: 13, fontWeight: '600' },
   noEvents:        { color: '#bbb', fontSize: 14, textAlign: 'center', paddingVertical: 24 },
 
-  ungroupedSection:    { paddingHorizontal: 16, paddingBottom: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#eee' },
-  ungroupedLabel:      { fontSize: 11, color: '#aaa', fontWeight: '600', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 },
-  eventRow:            { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#f0f0f0' },
-  eventDot:            { width: 10, height: 10, borderRadius: 5 },
-  eventName:           { fontSize: 14, fontWeight: '500', color: '#111' },
-  eventMeta:           { fontSize: 12, color: '#888', marginTop: 2 },
-  sportTag:            { fontSize: 10, color: '#bbb', fontWeight: '600' },
-  ungroupedEventLogo:  { width: 24, height: 24, marginRight: 4 },
-  ungroupedGameNumber: { fontSize: 10, fontWeight: '700', color: '#888', marginRight: 4 },
+  ungroupedSection:       { paddingHorizontal: 16, paddingBottom: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#eee' },
+  ungroupedLabel:         { fontSize: 11, color: '#aaa', fontWeight: '600', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 },
+  eventRow:               { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#f0f0f0' },
+  eventDot:               { width: 10, height: 10, borderRadius: 5 },
+  eventName:              { fontSize: 14, fontWeight: '500', color: '#111' },
+  eventCompetitionLabel:  { fontSize: 11, color: '#7BC67E', fontWeight: '600', marginTop: 1 },
+  eventMeta:              { fontSize: 12, color: '#888', marginTop: 2 },
+  sportTag:               { fontSize: 10, color: '#bbb', fontWeight: '600' },
+  ungroupedEventLogo:     { width: 24, height: 24, marginRight: 4 },
+  ungroupedGameNumber:    { fontSize: 10, fontWeight: '700', color: '#888', marginRight: 4 },
 
   timelineOuter: { marginTop: 8 },
   hourLabel:     { fontSize: 10, color: '#aaa', fontWeight: '500', textAlign: 'right', paddingRight: 8, width: TIME_COL_W },
@@ -677,6 +673,7 @@ const styles = StyleSheet.create({
   eventBlockGroupLabel: { fontSize: 11, color: '#fff', fontWeight: '700', marginTop: 2, marginBottom: 3 },
   groupList:            { gap: 2 },
   groupItem:            { fontSize: 9, color: 'rgba(255,255,255,0.9)', lineHeight: 13, flexWrap: 'wrap' },
+  competitionLabel:     { fontSize: 9, color: 'rgba(255,255,255,0.85)', fontWeight: '600', marginTop: 2 },
   gameNumberBadge:      { position: 'absolute', bottom: 4, right: 6, fontSize: 9, fontWeight: '700', color: 'rgba(255,255,255,0.9)' },
 
   eventBlockFade: { position: 'absolute', bottom: 0, left: 0, right: 0, height: '20%' },
