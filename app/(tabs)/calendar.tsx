@@ -582,8 +582,6 @@ export default function CalendarScreen() {
                         {ungrouped.map((d) => {
                           const e = d.isGroup ? null : d.event;
                           if (!e) return null;
-                            console.log('UNGROUPED EVENT:', e.name, 'gameNumber:', e.gameNumber, 'seriesSummary:', e.seriesSummary, 'isIfNecessary:', e.isIfNecessary);
-
                           return (
                             <View key={e.id} style={styles.eventRow}>
                               <View style={[styles.eventDot, { backgroundColor: SPORT_COLORS[e.sport] }]} />
