@@ -6,12 +6,9 @@ import {
   Dimensions,
   Image,
   Modal,
-  NativeScrollEvent,
-  NativeSyntheticEvent,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -51,6 +48,7 @@ const NFL_GROUP_WINDOW_MINUTES = 45;
 const NFL_GROUP_THRESHOLD      = 3;
 
 const DAY_LABELS     = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTH_NAMES    = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const HOUR_HEIGHT    = 56;
 const TOTAL_HOURS    = 24;
 const TIME_COL_W     = 52;
@@ -72,7 +70,7 @@ const TIMELINE_WIDTH  = SCREEN_WIDTH - TIMELINE_MARGIN * 2 - TIME_COL_W;
 
 function getPillLabel(event: SportEvent): string {
   if (event.awayAbbrev && event.homeAbbrev) {
-    return `${event.awayAbbrev}@${event.homeAbbrev}`;
+    return `${event.awayAbbrev}@${event.homeAbbrev}${event.isIfNecessary ? '*' : ''}`;
   }
   const name = event.name;
   if (name.length > 10) return name.slice(0, 9) + '…';
@@ -185,9 +183,9 @@ function layoutDisplayEvents(displays: DisplayEvent[]): {
   for (const d of displays) {
     const start = d.startHour;
     if (start === 0 && !d.isGroup && !d.event.time) { ungrouped.push(d); continue; }
-  const sport = d.isGroup ? d.sport : d.event.sport;
-  const customDuration = !d.isGroup ? d.event.durationHours : undefined;
-  timed.push({ display: d, start, end: start + (customDuration ?? SPORT_DURATION_HOURS[sport] ?? 2) });
+    const sport = d.isGroup ? d.sport : d.event.sport;
+    const customDuration = !d.isGroup ? d.event.durationHours : undefined;
+    timed.push({ display: d, start, end: start + (customDuration ?? SPORT_DURATION_HOURS[sport] ?? 2) });
   }
   timed.sort((a, b) => a.start - b.start);
 
@@ -233,6 +231,81 @@ function layoutDisplayEvents(displays: DisplayEvent[]): {
   }
 
   return { positioned: assigned, ungrouped };
+}
+
+// ─── Month Picker Modal ───────────────────────────────────────────────────────
+
+function MonthPickerModal({
+  visible,
+  current,
+  onSelect,
+  onClose,
+}: {
+  visible: boolean;
+  current: Date;
+  onSelect: (date: Date) => void;
+  onClose: () => void;
+}) {
+  const today = new Date();
+  const [pickerYear, setPickerYear] = useState(current.getFullYear());
+  const currentMonth = current.getMonth();
+  const currentYear  = current.getFullYear();
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <TouchableOpacity style={styles.pickerBackdrop} activeOpacity={1} onPress={onClose}>
+        <TouchableOpacity activeOpacity={1} style={styles.pickerContainer}>
+
+          {/* Year selector */}
+          <View style={styles.pickerYearRow}>
+            <TouchableOpacity onPress={() => setPickerYear((y) => y - 1)} style={styles.pickerYearBtn}>
+              <Text style={styles.pickerYearArrow}>‹</Text>
+            </TouchableOpacity>
+            <Text style={styles.pickerYearText}>{pickerYear}</Text>
+            <TouchableOpacity onPress={() => setPickerYear((y) => y + 1)} style={styles.pickerYearBtn}>
+              <Text style={styles.pickerYearArrow}>›</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Month grid — 4 columns × 3 rows */}
+          <View style={styles.pickerMonthGrid}>
+            {MONTH_NAMES.map((name, idx) => {
+              const isSelected = idx === currentMonth && pickerYear === currentYear;
+              const isToday    = idx === today.getMonth() && pickerYear === today.getFullYear();
+              return (
+                <TouchableOpacity
+                  key={idx}
+                  style={[
+                    styles.pickerMonthCell,
+                    isSelected && styles.pickerMonthCellSelected,
+                    !isSelected && isToday && styles.pickerMonthCellToday,
+                  ]}
+                  onPress={() => {
+                    onSelect(new Date(pickerYear, idx, 1));
+                    onClose();
+                  }}
+                >
+                  <Text style={[
+                    styles.pickerMonthText,
+                    isSelected && styles.pickerMonthTextSelected,
+                    !isSelected && isToday && styles.pickerMonthTextToday,
+                  ]}>
+                    {name}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {/* Cancel */}
+          <TouchableOpacity onPress={onClose} style={styles.pickerCancelBtn}>
+            <Text style={styles.pickerCancelText}>Cancel</Text>
+          </TouchableOpacity>
+
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </Modal>
+  );
 }
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
@@ -288,14 +361,6 @@ function DisplayEventBlock({
   const sport  = pd.display.isGroup ? pd.display.sport : pd.display.event.sport;
   const color  = SPORT_COLORS[sport];
 
-  const fadeOverlay = (
-    <LinearGradient
-      colors={['transparent', color]}
-      style={styles.eventBlockFade}
-      pointerEvents="none"
-    />
-  );
-
   if (pd.display.isGroup) {
     const group = pd.display as GroupedEvent;
     return (
@@ -309,7 +374,6 @@ function DisplayEventBlock({
             </Text>
           ))}
         </View>
-        {fadeOverlay}
       </View>
     );
   }
@@ -336,9 +400,15 @@ function DisplayEventBlock({
         <Text style={styles.competitionLabel} numberOfLines={1}>{e.soccerCompetitionLabel}</Text>
       )}
       {e.gameNumber && (
-        <Text style={styles.gameNumberBadge}>Game {e.gameNumber}</Text>
+        <View style={styles.playoffInfo}>
+          {e.seriesSummary && (
+            <Text style={styles.seriesSummary}>{e.seriesSummary}</Text>
+          )}
+          <Text style={styles.gameNumberBadge}>
+            Game {e.gameNumber}{e.isIfNecessary ? ' – If Necessary' : ''}
+          </Text>
+        </View>
       )}
-      {fadeOverlay}
     </View>
   );
 }
@@ -349,17 +419,12 @@ export default function CalendarScreen() {
   const scrollRef    = useRef<ScrollView>(null);
   const dayDetailRef = useRef<View>(null);
   const panRef       = useRef(null);
-  const gestureBegan = useRef({ atLeftEdge: false, atRightEdge: false });
 
-  const [current, setCurrent]           = useState(new Date());
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [newEvent, setNewEvent]         = useState({
-    name: '', sport: 'nba' as Sport, time: '', note: '',
-  });
+  const [current, setCurrent]                 = useState(new Date());
+  const [selectedDate, setSelectedDate]       = useState<string | null>(null);
+  const [showMonthPicker, setShowMonthPicker] = useState(false);
 
   const { eventsByDate, isLoading } = useGames(current.getFullYear(), current.getMonth());
-  const addCustomEvent = useAppStore((s) => s.addCustomEvent);
 
   const year           = current.getFullYear();
   const month          = current.getMonth();
@@ -404,19 +469,9 @@ export default function CalendarScreen() {
     }
   };
 
-  const handleAddEvent = () => {
-    if (!newEvent.name.trim() || !selectedDate) return;
-    addCustomEvent({
-      id: `custom-${Date.now()}`,
-      name: newEvent.name.trim(),
-      sport: newEvent.sport,
-      date: selectedDate,
-      time: newEvent.time,
-      channel: newEvent.note,
-      isCustom: true,
-    });
-    setShowAddModal(false);
-    setNewEvent({ name: '', sport: 'nba', time: '', note: '' });
+  const handleMonthSelect = (date: Date) => {
+    setCurrent(date);
+    setSelectedDate(null);
   };
 
   const selectedEvents            = selectedDate ? (eventsByDate[selectedDate] ?? []) : [];
@@ -426,198 +481,175 @@ export default function CalendarScreen() {
   const isToday                   = selectedDate === today;
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <ScrollView ref={scrollRef} contentContainerStyle={styles.scrollContent}>
+    <>
+      <SafeAreaView style={styles.safe}>
+        <ScrollView ref={scrollRef} contentContainerStyle={styles.scrollContent}>
 
-        {/* ── Month header ── */}
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => setCurrent(subMonths(current, 1))}>
-            <Text style={styles.navBtn}>‹</Text>
-          </TouchableOpacity>
-          <Text style={styles.monthTitle}>{format(current, 'MMMM yyyy')}</Text>
-          <TouchableOpacity onPress={() => setCurrent(addMonths(current, 1))}>
-            <Text style={styles.navBtn}>›</Text>
-          </TouchableOpacity>
-        </View>
+          {/* ── Month header ── */}
+          <View style={styles.header}>
+            <TouchableOpacity onPress={() => setCurrent(subMonths(current, 1))}>
+              <Text style={styles.navBtn}>‹</Text>
+            </TouchableOpacity>
 
-        {isLoading && (
-          <View style={styles.loadingRow}>
-            <ActivityIndicator size="small" color="#378ADD" />
-            <Text style={styles.loadingText}>Loading games...</Text>
+            {/* Tap month title to open picker */}
+            <TouchableOpacity onPress={() => setShowMonthPicker(true)} style={styles.monthTitleBtn}>
+              <Text style={styles.monthTitle}>{format(current, 'MMMM yyyy')}</Text>
+              <Text style={styles.monthTitleCaret}>▾</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity onPress={() => setCurrent(addMonths(current, 1))}>
+              <Text style={styles.navBtn}>›</Text>
+            </TouchableOpacity>
           </View>
-        )}
 
-        {/* ── Month grid ── */}
-        <View style={styles.dayLabels}>
-          {DAY_LABELS.map((d) => (
-            <Text key={d} style={styles.dayLabel}>{d}</Text>
-          ))}
-        </View>
+          {isLoading && (
+            <View style={styles.loadingRow}>
+              <ActivityIndicator size="small" color="#378ADD" />
+              <Text style={styles.loadingText}>Loading games...</Text>
+            </View>
+          )}
 
-        <View style={styles.grid}>
-          {Array.from({ length: firstDayOfWeek }).map((_, i) => (
-            <View key={`empty-${i}`} style={[styles.cell, { height: CELL_HEIGHT }]} />
-          ))}
-          {Array.from({ length: daysInMonth }).map((_, i) => {
-            const day     = i + 1;
-            const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-            const events  = (eventsByDate[dateStr] ?? []).slice().sort((a, b) => {
-              const isIndividual = (s: Sport) => s === 'golf' || s === 'tennis';
-              if (isIndividual(a.sport) && !isIndividual(b.sport)) return -1;
-              if (!isIndividual(a.sport) && isIndividual(b.sport)) return 1;
-              return (parseTimeToHour(a.time) ?? 25) - (parseTimeToHour(b.time) ?? 25);
-            });
-            const isTodayCell = dateStr === today;
-            const isSelected  = dateStr === selectedDate;
-            const visible      = events.slice(0, MAX_PILLS);
-            const remaining    = events.length - MAX_PILLS;
+          {/* ── Month grid ── */}
+          <View style={styles.dayLabels}>
+            {DAY_LABELS.map((d) => (
+              <Text key={d} style={styles.dayLabel}>{d}</Text>
+            ))}
+          </View>
 
-            return (
-              <TouchableOpacity
-                key={day}
-                style={[styles.cell, { height: CELL_HEIGHT }, isSelected && styles.cellSelected]}
-                onPress={() => handleDatePress(dateStr, isSelected)}
-              >
-                <View style={[styles.dayNum, isTodayCell && styles.dayNumToday]}>
-                  <Text style={[styles.dayNumText, isTodayCell && { color: '#fff' }]}>{day}</Text>
-                </View>
-                {visible.map((e) => (
-                  <View key={e.id} style={[styles.pill, { backgroundColor: SPORT_COLORS[e.sport] }]}>
-                    <Text style={styles.pillText} numberOfLines={1}>{getPillLabel(e)}</Text>
+          <View style={styles.grid}>
+            {Array.from({ length: firstDayOfWeek }).map((_, i) => (
+              <View key={`empty-${i}`} style={[styles.cell, { height: CELL_HEIGHT }]} />
+            ))}
+            {Array.from({ length: daysInMonth }).map((_, i) => {
+              const day     = i + 1;
+              const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+              const events  = (eventsByDate[dateStr] ?? []).slice().sort((a, b) => {
+                const isIndividual = (s: Sport) => s === 'golf' || s === 'tennis';
+                if (isIndividual(a.sport) && !isIndividual(b.sport)) return -1;
+                if (!isIndividual(a.sport) && isIndividual(b.sport)) return 1;
+                return (parseTimeToHour(a.time) ?? 25) - (parseTimeToHour(b.time) ?? 25);
+              });
+              const isTodayCell = dateStr === today;
+              const isSelected  = dateStr === selectedDate;
+              const visible      = events.slice(0, MAX_PILLS);
+              const remaining    = events.length - MAX_PILLS;
+
+              return (
+                <TouchableOpacity
+                  key={day}
+                  style={[styles.cell, { height: CELL_HEIGHT }, isSelected && styles.cellSelected]}
+                  onPress={() => handleDatePress(dateStr, isSelected)}
+                >
+                  <View style={[styles.dayNum, isTodayCell && styles.dayNumToday]}>
+                    <Text style={[styles.dayNumText, isTodayCell && { color: '#fff' }]}>{day}</Text>
                   </View>
-                ))}
-                {remaining > 0 && <Text style={styles.moreText}>+{remaining} more</Text>}
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-
-        {/* ── Day detail ── */}
-        {selectedDate && (
-          <PanGestureHandler
-            ref={panRef}
-            activeOffsetX={[-15, 15]}
-            failOffsetY={[-15, 15]}
-            onHandlerStateChange={handlePanGesture}
-          >
-            <View ref={dayDetailRef} style={styles.dayDetail}>
-              <View style={styles.dayDetailHeader}>
-                <Text style={styles.dayDetailTitle}>
-                  {format(new Date(selectedDate + 'T00:00:00'), 'EEEE, MMMM d')}
-                </Text>
-                <TouchableOpacity style={styles.addEventBtn} onPress={() => setShowAddModal(true)}>
-                  <Text style={styles.addEventBtnText}>+ Add</Text>
-                </TouchableOpacity>
-              </View>
-
-              {selectedEvents.length === 0 ? (
-                <Text style={styles.noEvents}>No games scheduled</Text>
-              ) : (
-                <>
-                  {ungrouped.length > 0 && (
-                    <View style={styles.ungroupedSection}>
-                      <Text style={styles.ungroupedLabel}>Time TBD</Text>
-                      {ungrouped.map((d) => {
-                        const e = d.isGroup ? null : d.event;
-                        if (!e) return null;
-                        return (
-                          <View key={e.id} style={styles.eventRow}>
-                            <View style={[styles.eventDot, { backgroundColor: SPORT_COLORS[e.sport] }]} />
-                            <View style={{ flex: 1 }}>
-                              <Text style={styles.eventName}>{e.name}</Text>
-                              {e.soccerCompetitionLabel && (
-                                <Text style={styles.eventCompetitionLabel}>{e.soccerCompetitionLabel}</Text>
-                              )}
-                              {e.channel && <Text style={styles.eventMeta}>{e.channel}</Text>}
-                            </View>
-                            {e.eventLogo && (
-                              <Image source={{ uri: e.eventLogo }} style={styles.ungroupedEventLogo} resizeMode="contain" />
-                            )}
-                            {e.gameNumber && (
-                              <Text style={styles.ungroupedGameNumber}>Game {e.gameNumber}</Text>
-                            )}
-                            <Text style={styles.sportTag}>{e.sport.toUpperCase()}</Text>
-                          </View>
-                        );
-                      })}
+                  {visible.map((e) => (
+                    <View key={e.id} style={[styles.pill, { backgroundColor: SPORT_COLORS[e.sport] }]}>
+                      <Text style={styles.pillText} numberOfLines={1}>{getPillLabel(e)}</Text>
                     </View>
-                  )}
+                  ))}
+                  {remaining > 0 && <Text style={styles.moreText}>+{remaining} more</Text>}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
 
-                  {positioned.length > 0 && (
-                    <View style={styles.timelineOuter}>
-                      <View style={{ flexDirection: 'row' }}>
-                        <HourLabels />
-                        <View style={{ width: TIMELINE_WIDTH, height: timelineHeight }}>
-                          <HourGrid width={TIMELINE_WIDTH} />
-                          {isToday && <CurrentTimeLine width={TIMELINE_WIDTH} />}
-                          {positioned.map((pd) => (
-                            <DisplayEventBlock
-                              key={pd.display.isGroup ? pd.display.id : pd.display.event.id}
-                              pd={pd}
-                              totalWidth={TIMELINE_WIDTH}
-                              isToday={isToday}
-                            />
-                          ))}
+          {/* ── Day detail header ── */}
+          {selectedDate && (
+            <View style={styles.dayDetailHeaderOuter}>
+              <Text style={styles.dayDetailTitle}>
+                {format(new Date(selectedDate + 'T00:00:00'), 'EEEE, MMMM d')}
+              </Text>
+            </View>
+          )}
+
+          {/* ── Day detail (swipeable timeline) ── */}
+          {selectedDate && (
+            <PanGestureHandler
+              ref={panRef}
+              activeOffsetX={[-15, 15]}
+              failOffsetY={[-15, 15]}
+              onHandlerStateChange={handlePanGesture}
+            >
+              <View ref={dayDetailRef} style={styles.dayDetail}>
+                {selectedEvents.length === 0 ? (
+                  <Text style={styles.noEvents}>No games scheduled</Text>
+                ) : (
+                  <>
+                    {ungrouped.length > 0 && (
+                      <View style={styles.ungroupedSection}>
+                        <Text style={styles.ungroupedLabel}>Time TBD</Text>
+                        {ungrouped.map((d) => {
+                          const e = d.isGroup ? null : d.event;
+                          if (!e) return null;
+                            console.log('UNGROUPED EVENT:', e.name, 'gameNumber:', e.gameNumber, 'seriesSummary:', e.seriesSummary, 'isIfNecessary:', e.isIfNecessary);
+
+                          return (
+                            <View key={e.id} style={styles.eventRow}>
+                              <View style={[styles.eventDot, { backgroundColor: SPORT_COLORS[e.sport] }]} />
+                              <View style={{ flex: 1 }}>
+                                <Text style={styles.eventName}>{e.name}</Text>
+                                {e.soccerCompetitionLabel && (
+                                  <Text style={styles.eventCompetitionLabel}>{e.soccerCompetitionLabel}</Text>
+                                )}
+                                {e.channel && <Text style={styles.eventMeta}>{e.channel}</Text>}
+                              </View>
+                              {e.eventLogo && (
+                                <Image source={{ uri: e.eventLogo }} style={styles.ungroupedEventLogo} resizeMode="contain" />
+                              )}
+                              {e.gameNumber && (
+                                <View style={{ alignItems: 'flex-end', marginRight: 4 }}>
+                                  <Text style={styles.ungroupedGameNumber}>
+                                    Game {e.gameNumber}{e.isIfNecessary ? '*' : ''}
+                                  </Text>
+                                  {e.seriesSummary && (
+                                    <Text style={styles.ungroupedSeriesSummary}>{e.seriesSummary}</Text>
+                                  )}
+                                </View>
+                              )}
+                              <Text style={styles.sportTag}>{e.sport.toUpperCase()}</Text>
+                            </View>
+                          );
+                        })}
+                      </View>
+                    )}
+
+                    {positioned.length > 0 && (
+                      <View style={styles.timelineOuter}>
+                        <View style={{ flexDirection: 'row' }}>
+                          <HourLabels />
+                          <View style={{ width: TIMELINE_WIDTH, height: timelineHeight }}>
+                            <HourGrid width={TIMELINE_WIDTH} />
+                            {isToday && <CurrentTimeLine width={TIMELINE_WIDTH} />}
+                            {positioned.map((pd) => (
+                              <DisplayEventBlock
+                                key={pd.display.isGroup ? pd.display.id : pd.display.event.id}
+                                pd={pd}
+                                totalWidth={TIMELINE_WIDTH}
+                                isToday={isToday}
+                              />
+                            ))}
+                          </View>
                         </View>
                       </View>
-                    </View>
-                  )}
-                </>
-              )}
-            </View>
-          </PanGestureHandler>
-        )}
+                    )}
+                  </>
+                )}
+              </View>
+            </PanGestureHandler>
+          )}
 
-      </ScrollView>
+        </ScrollView>
+      </SafeAreaView>
 
-      {/* ── Add event modal ── */}
-      <Modal visible={showAddModal} transparent animationType="slide">
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modal}>
-            <Text style={styles.modalTitle}>Add game</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Game name"
-              value={newEvent.name}
-              onChangeText={(v) => setNewEvent((s) => ({ ...s, name: v }))}
-            />
-            <TextInput
-              style={styles.input}
-              placeholder="Time (e.g. 7:30 PM ET)"
-              value={newEvent.time}
-              onChangeText={(v) => setNewEvent((s) => ({ ...s, time: v }))}
-            />
-            <TextInput
-              style={styles.input}
-              placeholder="Channel / venue (optional)"
-              value={newEvent.note}
-              onChangeText={(v) => setNewEvent((s) => ({ ...s, note: v }))}
-            />
-            <View style={styles.sportPicker}>
-              {(['nfl', 'nba', 'mlb', 'nhl', 'soccer'] as Sport[]).map((s) => (
-                <TouchableOpacity
-                  key={s}
-                  style={[styles.sportChip, newEvent.sport === s && { backgroundColor: SPORT_COLORS[s] }]}
-                  onPress={() => setNewEvent((st) => ({ ...st, sport: s }))}
-                >
-                  <Text style={[styles.sportChipText, newEvent.sport === s && { color: '#fff' }]}>
-                    {s.toUpperCase()}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-            <View style={styles.modalFooter}>
-              <TouchableOpacity onPress={() => setShowAddModal(false)} style={styles.cancelBtn}>
-                <Text style={styles.cancelBtnText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={handleAddEvent} style={styles.saveBtn}>
-                <Text style={styles.saveBtnText}>Save</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-    </SafeAreaView>
+      {/* ── Month picker modal (outside SafeAreaView) ── */}
+      <MonthPickerModal
+        visible={showMonthPicker}
+        current={current}
+        onSelect={handleMonthSelect}
+        onClose={() => setShowMonthPicker(false)}
+      />
+    </>
   );
 }
 
@@ -627,11 +659,13 @@ const styles = StyleSheet.create({
   safe:          { flex: 1, backgroundColor: '#fff' },
   scrollContent: { paddingBottom: 40 },
 
-  header:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 12 },
-  navBtn:      { fontSize: 28, color: '#378ADD', paddingHorizontal: 8 },
-  monthTitle:  { fontSize: 20, fontWeight: '600' },
-  loadingRow:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 4 },
-  loadingText: { fontSize: 13, color: '#999' },
+  header:          { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 12 },
+  navBtn:          { fontSize: 28, color: '#378ADD', paddingHorizontal: 8 },
+  monthTitleBtn:   { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  monthTitle:      { fontSize: 20, fontWeight: '600' },
+  monthTitleCaret: { fontSize: 13, color: '#378ADD', marginTop: 2 },
+  loadingRow:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 4 },
+  loadingText:     { fontSize: 13, color: '#999' },
 
   dayLabels:    { flexDirection: 'row', paddingHorizontal: 4 },
   dayLabel:     { flex: 1, textAlign: 'center', fontSize: 11, color: '#999', fontWeight: '500', paddingVertical: 4 },
@@ -645,12 +679,11 @@ const styles = StyleSheet.create({
   pillText:     { fontSize: 8, color: '#fff' },
   moreText:     { fontSize: 8, color: '#999' },
 
-  dayDetail:       { margin: 16, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, borderColor: '#eee', overflow: 'hidden' },
-  dayDetailHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, paddingBottom: 12 },
-  dayDetailTitle:  { fontSize: 16, fontWeight: '600' },
-  addEventBtn:     { backgroundColor: '#378ADD', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
-  addEventBtnText: { color: '#fff', fontSize: 13, fontWeight: '600' },
-  noEvents:        { color: '#bbb', fontSize: 14, textAlign: 'center', paddingVertical: 24 },
+  dayDetailHeaderOuter: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, marginTop: 16, paddingHorizontal: 16, paddingVertical: 12, backgroundColor: '#fff', borderWidth: StyleSheet.hairlineWidth, borderColor: '#eee', borderTopLeftRadius: 14, borderTopRightRadius: 14 },
+  dayDetailTitle:       { fontSize: 16, fontWeight: '600' },
+
+  dayDetail: { marginHorizontal: 16, marginBottom: 16, borderWidth: StyleSheet.hairlineWidth, borderTopWidth: 0, borderColor: '#eee', borderBottomLeftRadius: 14, borderBottomRightRadius: 14, overflow: 'hidden' },
+  noEvents:  { color: '#bbb', fontSize: 14, textAlign: 'center', paddingVertical: 24 },
 
   ungroupedSection:       { paddingHorizontal: 16, paddingBottom: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#eee' },
   ungroupedLabel:         { fontSize: 11, color: '#aaa', fontWeight: '600', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 },
@@ -661,7 +694,7 @@ const styles = StyleSheet.create({
   eventMeta:              { fontSize: 12, color: '#888', marginTop: 2 },
   sportTag:               { fontSize: 10, color: '#bbb', fontWeight: '600' },
   ungroupedEventLogo:     { width: 24, height: 24, marginRight: 4 },
-  ungroupedGameNumber:    { fontSize: 10, fontWeight: '700', color: '#888', marginRight: 4 },
+  ungroupedGameNumber:    { fontSize: 10, fontWeight: '700', color: '#888' },
 
   timelineOuter: { marginTop: 8 },
   hourLabel:     { fontSize: 10, color: '#aaa', fontWeight: '500', textAlign: 'right', paddingRight: 8, width: TIME_COL_W },
@@ -674,7 +707,7 @@ const styles = StyleSheet.create({
   groupList:            { gap: 2 },
   groupItem:            { fontSize: 9, color: 'rgba(255,255,255,0.9)', lineHeight: 13, flexWrap: 'wrap' },
   competitionLabel:     { fontSize: 9, color: 'rgba(255,255,255,0.85)', fontWeight: '600', marginTop: 2 },
-  gameNumberBadge:      { position: 'absolute', bottom: 4, right: 6, fontSize: 9, fontWeight: '700', color: 'rgba(255,255,255,0.9)' },
+  gameNumberBadge: { fontSize: 9, fontWeight: '700', color: 'rgba(255,255,255,0.9)' },
 
   eventBlockFade: { position: 'absolute', bottom: 0, left: 0, right: 0, height: '20%' },
 
@@ -685,16 +718,23 @@ const styles = StyleSheet.create({
   currentTimeDot:  { width: 8, height: 8, borderRadius: 4, backgroundColor: '#E53935' },
   currentTimeLine: { height: 1.5, backgroundColor: '#E53935' },
 
-  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
-  modal:         { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24, paddingBottom: 40 },
-  modalTitle:    { fontSize: 18, fontWeight: '600', marginBottom: 16 },
-  input:         { borderWidth: StyleSheet.hairlineWidth, borderColor: '#ddd', borderRadius: 10, padding: 12, fontSize: 15, marginBottom: 10 },
-  sportPicker:   { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginVertical: 8 },
-  sportChip:     { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
-  sportChipText: { fontSize: 12, fontWeight: '600', color: '#555' },
-  modalFooter:   { flexDirection: 'row', gap: 10, marginTop: 16 },
-  cancelBtn:     { flex: 1, padding: 14, borderRadius: 12, borderWidth: 1, borderColor: '#ddd', alignItems: 'center' },
-  cancelBtnText: { fontSize: 15, color: '#555' },
-  saveBtn:       { flex: 1, padding: 14, borderRadius: 12, backgroundColor: '#378ADD', alignItems: 'center' },
-  saveBtnText:   { fontSize: 15, color: '#fff', fontWeight: '600' },
+  // ── Month picker ──
+  pickerBackdrop:          { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center' },
+  pickerContainer:         { backgroundColor: '#fff', borderRadius: 20, padding: 24, width: SCREEN_WIDTH - 64, shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 20, elevation: 10 },
+  pickerYearRow:           { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 },
+  pickerYearBtn:           { padding: 8 },
+  pickerYearArrow:         { fontSize: 28, color: '#378ADD', lineHeight: 32 },
+  pickerYearText:          { fontSize: 22, fontWeight: '700', color: '#111' },
+  pickerMonthGrid:         { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'space-between' },
+  pickerMonthCell:         { width: '22%', paddingVertical: 10, borderRadius: 10, alignItems: 'center', backgroundColor: '#f5f5f5' },
+  pickerMonthCellSelected: { backgroundColor: '#378ADD' },
+  pickerMonthCellToday:    { backgroundColor: '#EFF6FF', borderWidth: 1.5, borderColor: '#378ADD' },
+  pickerMonthText:         { fontSize: 14, fontWeight: '500', color: '#333' },
+  pickerMonthTextSelected: { color: '#fff', fontWeight: '700' },
+  pickerMonthTextToday:    { color: '#378ADD', fontWeight: '600' },
+  pickerCancelBtn:         { marginTop: 20, alignItems: 'center', paddingVertical: 10 },
+  pickerCancelText:        { fontSize: 15, color: '#999' },
+  playoffInfo: { marginTop: 4 },
+  seriesSummary:  { fontSize: 9, color: 'rgba(255,255,255,0.85)', marginTop: 1 },
+  ungroupedSeriesSummary: { fontSize: 9, color: '#aaa', marginTop: 1 },
 });

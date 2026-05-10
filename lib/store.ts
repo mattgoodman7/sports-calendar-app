@@ -109,6 +109,8 @@ export interface SportEvent {
   soccerRoundSlug?: string;
   soccerCompetitionLabel?: string;
   durationHours?: number;
+  isIfNecessary?: boolean;
+  seriesSummary?: string;
 }
 
 export interface UserPreferences {

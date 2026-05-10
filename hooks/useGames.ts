@@ -158,6 +158,9 @@ export function useGames(year: number, month: number) {
     [...(query.data ?? []), ...draftsForMonth],
     sportSettings
   );
+  filtered.filter(e => e.gameNumber).forEach(e => 
+  console.log('FILTERED PLAYOFF:', e.name, 'seriesSummary:', e.seriesSummary, 'isIfNecessary:', e.isIfNecessary)
+);
   const allEvents = [...filtered, ...customForMonth];
 
   const eventsByDate = allEvents.reduce<Record<string, typeof allEvents>>((acc, event) => {

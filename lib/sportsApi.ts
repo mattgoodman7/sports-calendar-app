@@ -28,6 +28,7 @@ const NATIONAL_TV_CHANNELS = new Set([
   'FS1', 'FS2',
   'Prime Video', 'Hulu',
   'Peacock', 'Max',
+  'USA Net',
 ]);
 
 const TEAM_SPORTS: Sport[] = ['nfl', 'nba', 'mlb', 'nhl', 'soccer', 'wnba', 'ncaafb', 'ncaamb'];
@@ -88,9 +89,7 @@ function parseDateStr(dateStr: string): { localDate: string; utcDate: string; ti
 }
 
 function normalizeEvent(raw: any, sport: Sport, leagueId?: string): SportEvent[] {
-  if (sport === 'nba') {
-  console.log('NBA EVENT', raw.name, raw.type?.abbreviation, raw.season?.slug);
-}
+
   if (sport === 'f1') {
     const raceName = raw.name ?? raw.shortName ?? 'Grand Prix';
     const eventLogo = 'https://a.espncdn.com/redesign/assets/img/icons/ESPN-icon-racing.png';
@@ -143,9 +142,9 @@ function normalizeEvent(raw: any, sport: Sport, leagueId?: string): SportEvent[]
   const playoffHeadline = competitionNotes.find((n: any) => n.headline)?.headline ?? '';
   const gameNumberMatch = playoffHeadline.match(/Game (\d+)/i);
   const gameNumber = gameNumberMatch ? parseInt(gameNumberMatch[1], 10) : undefined;
-
-  const channel = competition?.broadcasts?.[0]?.names?.[0];
-  const broadcasts = competition?.broadcasts ?? [];
+  const isIfNecessary = playoffHeadline.toLowerCase().includes('if necessary');
+  const seriesSummary = competition?.series?.summary ?? undefined;
+  const channel = competition?.broadcasts?.[0]?.names?.[0];  const broadcasts = competition?.broadcasts ?? [];
   const isNationalTv = broadcasts.some((b: any) =>
     (b.names ?? []).some((name: string) =>
       NATIONAL_TV_CHANNELS.has(name)
@@ -217,6 +216,8 @@ if (raw.endDate) {
     soccerLeagueId: leagueId,
     soccerRoundSlug,
     soccerCompetitionLabel,
+    isIfNecessary,
+    seriesSummary,
   }];
 }
 
