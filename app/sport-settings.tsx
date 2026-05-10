@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import TeamPicker from '../components/TeamPicker';
 import {
   CombatSportFilter,
+  DRAFT_SPORTS,
   SOCCER_CLUB_LEAGUES,
   SOCCER_KNOCKOUT_COMPETITIONS,
   SoccerKnockoutThreshold,
@@ -135,6 +136,7 @@ export default function SportSettingsScreen() {
   const selectedClubLeagues = setting?.selectedClubLeagues ?? ['usa.1'];
   const knockoutThresholds = setting?.knockoutThresholds ?? {};
   const leagueFilters = setting?.leagueFilters ?? {};
+  const hasDraft = DRAFT_SPORTS.includes(sport);
   const f1Values: Record<string, boolean> = {
     f1ShowPractice:       setting?.f1ShowPractice ?? false,
     f1ShowSprintShootout: setting?.f1ShowSprintShootout ?? false,
@@ -172,7 +174,6 @@ export default function SportSettingsScreen() {
 
                 return (
                   <View key={league.id} style={styles.leagueBlock}>
-                    {/* League toggle row */}
                     <TouchableOpacity
                       style={styles.leagueHeaderRow}
                       onPress={() => toggleClubLeague(league.id)}
@@ -187,7 +188,6 @@ export default function SportSettingsScreen() {
                       )}
                     </TouchableOpacity>
 
-                    {/* Per-league filter options — only shown when league is selected */}
                     {isSelected && (
                       <>
                         <View style={styles.section}>
@@ -216,7 +216,6 @@ export default function SportSettingsScreen() {
                           })}
                         </View>
 
-                        {/* Team picker — only shown when my_team filter is active */}
                         {showTeamPicker && (
                           <View style={styles.teamPickerWrapper}>
                             <TeamPicker
@@ -268,6 +267,29 @@ export default function SportSettingsScreen() {
                   </View>
                 );
               })}
+
+              {/* Drafts toggle for MLS */}
+              {hasDraft && (
+                <>
+                  <Text style={styles.sectionLabel}>Draft</Text>
+                  <View style={styles.section}>
+                    <TouchableOpacity
+                      style={styles.optionRow}
+                      onPress={() => updateSportSetting(sport, { showDrafts: !setting?.showDrafts })}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.optionLabel, setting?.showDrafts && { color }]}>SuperDraft</Text>
+                        <Text style={styles.optionDescription}>Show the MLS SuperDraft on the calendar</Text>
+                      </View>
+                      {setting?.showDrafts && (
+                        <View style={[styles.checkCircle, { backgroundColor: color }]}>
+                          <Text style={styles.checkMark}>✓</Text>
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </>
+              )}
             </>
           )}
 
@@ -297,7 +319,7 @@ export default function SportSettingsScreen() {
                   );
                 })}
                 <TouchableOpacity
-                  style={styles.optionRow}
+                  style={[styles.optionRow, hasDraft && styles.rowBorder]}
                   onPress={() => updateSportSetting(sport, { alwaysShowPlayoffs: !setting?.alwaysShowPlayoffs })}
                 >
                   <View style={{ flex: 1 }}>
@@ -312,6 +334,24 @@ export default function SportSettingsScreen() {
                     </View>
                   )}
                 </TouchableOpacity>
+
+                {/* Drafts toggle — inside Show section for non-soccer sports */}
+                {hasDraft && (
+                  <TouchableOpacity
+                    style={styles.optionRow}
+                    onPress={() => updateSportSetting(sport, { showDrafts: !setting?.showDrafts })}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.optionLabel, setting?.showDrafts && { color }]}>Draft</Text>
+                      <Text style={styles.optionDescription}>Show draft lottery and draft days</Text>
+                    </View>
+                    {setting?.showDrafts && (
+                      <View style={[styles.checkCircle, { backgroundColor: color }]}>
+                        <Text style={styles.checkMark}>✓</Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                )}
               </View>
             </>
           )}
@@ -454,7 +494,6 @@ const styles = StyleSheet.create({
   knockoutCompLabel: { fontSize: 14, fontWeight: '600', color: '#444', paddingHorizontal: 20, paddingTop: 16, paddingBottom: 6 },
   section:           { backgroundColor: '#fff', marginHorizontal: 16, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, borderColor: '#eee', overflow: 'hidden' },
 
-  // Per-league block
   leagueBlock:       { marginHorizontal: 16, marginBottom: 8 },
   leagueHeaderRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12, paddingHorizontal: 4 },
   leagueHeaderLabel: { fontSize: 15, fontWeight: '600', color: '#333' },
@@ -467,5 +506,5 @@ const styles = StyleSheet.create({
   checkCircle:       { width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   checkMark:         { color: '#fff', fontSize: 13, fontWeight: '700' },
 
-  teamPickerWrapper: { marginBottom: 8 },
+  teamPickerWrapper: { marginBottom: 8, marginLeft: 16 },
 });

@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { fetchGamesForSports } from '../lib/sportsApi';
-import { KNOCKOUT_ROUND_ORDER, SOCCER_CLUB_LEAGUES, SOCCER_KNOCKOUT_COMPETITIONS, SportEvent, useAppStore } from '../lib/store';
+import { DRAFT_EVENTS } from '../lib/draftEvents';
+import { DRAFT_SPORTS, KNOCKOUT_ROUND_ORDER, SOCCER_CLUB_LEAGUES, SOCCER_KNOCKOUT_COMPETITIONS, SportEvent, useAppStore } from '../lib/store';
 
 const ROUND_RANK: Record<string, number> = {
   'quarterfinals': 0,
@@ -12,6 +13,11 @@ function applyFilters(events: SportEvent[], sportSettings: Record<string, any>):
   return events.filter((event) => {
     const setting = sportSettings[event.sport];
     if (!setting) return true;
+
+    // Draft events — show only if showDrafts is enabled
+    if (event.isDraft) {
+      return setting.showDrafts === true;
+    }
 
     if (event.gameNumber && setting.alwaysShowPlayoffs) return true;
 
@@ -40,7 +46,6 @@ function applyFilters(events: SportEvent[], sportSettings: Record<string, any>):
       const isClubLeague = SOCCER_CLUB_LEAGUES.some((l) => l.id === leagueId);
       const isKnockoutComp = SOCCER_KNOCKOUT_COMPETITIONS.some((l) => l.id === leagueId);
 
-      // Collect all tracked teams across all club leagues (for cross-competition tracking)
       const allTrackedTeams: string[] = [];
       const byLeague: Record<string, any[]> = setting.myTeamsByLeague ?? {};
       for (const teams of Object.values(byLeague)) {
@@ -51,7 +56,6 @@ function applyFilters(events: SportEvent[], sportSettings: Record<string, any>):
         allTrackedTeams.some((name) => event.homeTeam === name || event.awayTeam === name);
 
       if (isClubLeague) {
-        // Use per-league filter if set, otherwise fall back to global teamFilter
         const leagueFilters: Record<string, string> = setting.leagueFilters ?? {};
         const filter = leagueFilters[leagueId ?? ''] ?? setting.teamFilter ?? 'all';
 
@@ -77,10 +81,8 @@ function applyFilters(events: SportEvent[], sportSettings: Record<string, any>):
       }
 
       if (isKnockoutComp) {
-        // Always show if a tracked team is playing
         if (teamIsPlaying) return true;
 
-        // Otherwise check round threshold
         const thresholds: Record<string, string> = setting.knockoutThresholds ?? {};
         const threshold = thresholds[leagueId ?? ''] ?? 'off';
         if (threshold === 'off') return false;
@@ -142,7 +144,20 @@ export function useGames(year: number, month: number) {
     return d.getFullYear() === year && d.getMonth() === month;
   });
 
-  const filtered = applyFilters(query.data ?? [], sportSettings);
+  // Inject draft events for sports the user has enabled
+  const draftsForMonth = DRAFT_EVENTS.filter((e) => {
+    const d = new Date(e.date);
+    return (
+      d.getFullYear() === year &&
+      d.getMonth() === month &&
+      sports.includes(e.sport)
+    );
+  });
+
+  const filtered = applyFilters(
+    [...(query.data ?? []), ...draftsForMonth],
+    sportSettings
+  );
   const allEvents = [...filtered, ...customForMonth];
 
   const eventsByDate = allEvents.reduce<Record<string, typeof allEvents>>((acc, event) => {

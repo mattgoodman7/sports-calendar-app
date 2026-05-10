@@ -61,13 +61,17 @@ export const ROUND_LABELS: Record<string, string> = {
   'final':         'Final',
 };
 
+// Sports that have draft events
+export const DRAFT_SPORTS: Sport[] = ['nfl', 'nba', 'mlb', 'nhl', 'wnba', 'soccer'];
+
 export interface SportSetting {
   sport: Sport;
   alwaysShowPlayoffs?: boolean;
+  showDrafts?: boolean;
   teamFilter?: TeamSportFilter;
   myTeams?: Team[];
-  myTeamsByLeague?: Record<string, Team[]>;       // keyed by club league id
-  leagueFilters?: Record<string, TeamSportFilter>; // per-club-league filter
+  myTeamsByLeague?: Record<string, Team[]>;
+  leagueFilters?: Record<string, TeamSportFilter>;
   tournamentFilter?: TournamentSportFilter;
   selectedTournaments?: Tournament[];
   combatFilter?: CombatSportFilter;
@@ -98,11 +102,11 @@ export interface SportEvent {
   isNationalTv?: boolean;
   isMajor?: boolean;
   isCustom?: boolean;
+  isDraft?: boolean;
   gameNumber?: number;
   f1SessionType?: F1SessionType;
   soccerLeagueId?: string;
   soccerRoundSlug?: string;
-  // Competition label for knockout events e.g. "Champions League — Final"
   soccerCompetitionLabel?: string;
   durationHours?: number;
 }
@@ -165,6 +169,7 @@ export const useAppStore = create<AppState>()(
               teamFilter: 'all',
               tournamentFilter: 'majors',
               combatFilter: 'main_events',
+              showDrafts: false,
               selectedClubLeagues: sport === 'soccer' ? ['usa.1'] : undefined,
               knockoutThresholds: sport === 'soccer' ? {} : undefined,
               leagueFilters: sport === 'soccer' ? {} : undefined,
