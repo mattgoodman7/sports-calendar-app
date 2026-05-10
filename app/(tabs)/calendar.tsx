@@ -317,7 +317,7 @@ function DisplayEventBlock({
   const e           = pd.display.event;
   const isTeamSport = TEAM_SPORTS.includes(sport);
   return (
-    <View style={[styles.eventBlock, { top, height, left, width, backgroundColor: color, opacity }]}>
+    <View style={[styles.eventBlock, { top, height, left, width, backgroundColor: color }]}>
       <Text style={styles.eventBlockName} numberOfLines={2}>{e.name}</Text>
       {isTeamSport && (e.homeLogo || e.awayLogo) && (
         <View style={styles.logoRow}>

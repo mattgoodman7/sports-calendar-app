@@ -21,6 +21,15 @@ const ESPN_PATHS: Record<Sport, string> = {
   boxing: 'boxing/boxing',
 };
 
+const NATIONAL_TV_CHANNELS = new Set([
+  'ABC', 'CBS', 'NBC', 'FOX',
+  'ESPN', 'ESPN2', 'ESPNU',
+  'TNT', 'TBS', 'truTV',
+  'FS1', 'FS2',
+  'Prime Video', 'Hulu',
+  'Peacock', 'Max',
+]);
+
 const TEAM_SPORTS: Sport[] = ['nfl', 'nba', 'mlb', 'nhl', 'soccer', 'wnba', 'ncaafb', 'ncaamb'];
 
 const EXTRA_PARAMS: Partial<Record<Sport, Record<string, any>>> = {
@@ -79,6 +88,9 @@ function parseDateStr(dateStr: string): { localDate: string; utcDate: string; ti
 }
 
 function normalizeEvent(raw: any, sport: Sport, leagueId?: string): SportEvent[] {
+  if (sport === 'nba') {
+  console.log('NBA EVENT', raw.name, raw.type?.abbreviation, raw.season?.slug);
+}
   if (sport === 'f1') {
     const raceName = raw.name ?? raw.shortName ?? 'Grand Prix';
     const eventLogo = 'https://a.espncdn.com/redesign/assets/img/icons/ESPN-icon-racing.png';
@@ -133,7 +145,12 @@ function normalizeEvent(raw: any, sport: Sport, leagueId?: string): SportEvent[]
   const gameNumber = gameNumberMatch ? parseInt(gameNumberMatch[1], 10) : undefined;
 
   const channel = competition?.broadcasts?.[0]?.names?.[0];
-  const isNationalTv = (competition?.broadcasts ?? []).length > 0;
+  const broadcasts = competition?.broadcasts ?? [];
+  const isNationalTv = broadcasts.some((b: any) =>
+    (b.names ?? []).some((name: string) =>
+      NATIONAL_TV_CHANNELS.has(name)
+    )
+  );
   const venue = competition?.venue?.fullName;
 
   const homeLogo = TEAM_SPORTS.includes(sport) ? getTeamLogo(homeComp?.team) : undefined;
@@ -164,19 +181,28 @@ function normalizeEvent(raw: any, sport: Sport, leagueId?: string): SportEvent[]
     }));
   }
 
-  if (sport === 'tennis') {
-    const isMajor = isMajorTournament(name, sport);
-    const startDate = parseISO(utcDateStr);
-    const duration = isMajor ? 14 : 7;
-    return Array.from({ length: duration }, (_, offset) => ({
-      id: `tennis-espn-${raw.id}-day${offset + 1}`,
-      name: `${name} — Day ${offset + 1}`,
-      sport,
-      date: format(addDays(startDate, offset), 'yyyy-MM-dd'),
-      time: undefined,
-      venue, channel, isNationalTv, isMajor, eventLogo,
-    }));
-  }
+if (sport === 'tennis') {
+  const isMajor = isMajorTournament(name, sport);
+  const startDate = parseISO(utcDateStr);
+
+  let duration: number;
+if (raw.endDate) {
+  const end = new Date(raw.endDate);
+  const start = new Date(utcDateStr + 'T12:00:00');
+  duration = Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+} else {
+  duration = isMajor ? 14 : 7;
+}
+
+  return Array.from({ length: duration }, (_, offset) => ({
+    id: `tennis-espn-${raw.id}-day${offset + 1}`,
+    name: `${name} — Day ${offset + 1}`,
+    sport,
+    date: format(addDays(startDate, offset), 'yyyy-MM-dd'),
+    time: undefined,
+    venue, channel, isNationalTv, isMajor, eventLogo,
+  }));
+}
 
   return [{
     id: `${sport}-espn-${raw.id}`,
@@ -210,13 +236,45 @@ async function fetchLeague(
     const response = await axios.get(`${BASE}/${path}/scoreboard`, {
       params: { dates: dateParam, limit: 200, ...otherParams },
     });
-    return (response.data?.events ?? []).flatMap((e: any) => normalizeEvent(e, sport, leagueId));
+    const events = (response.data?.events ?? []).flatMap((e: any) => normalizeEvent(e, sport, leagueId));
+    return events;
   } catch (err) {
     console.error(`Failed to fetch ${path}:`, err);
     return [];
   }
 }
+async function fetchLeagueByWeek(
+  sport: Sport,
+  year: number,
+  month: number,
+): Promise<SportEvent[]> {
+  const start = startOfMonth(new Date(year, month));
+  const end = endOfMonth(new Date(year, month));
+  const weeks: Date[] = [];
+  let current = start;
+  while (current <= end) {
+    weeks.push(new Date(current));
+    current = addDays(current, 7);
+  }
 
+  const results = await Promise.allSettled(
+    weeks.map((weekStart) => {
+      const weekEnd = addDays(weekStart, 6);
+      const from = format(weekStart, 'yyyyMMdd');
+      const to = format(weekEnd > end ? end : weekEnd, 'yyyyMMdd');
+      return fetchLeague(ESPN_PATHS[sport], sport, year, month, { dates: `${from}-${to}` });
+    })
+  );
+
+  const seen = new Set<string>();
+  return results
+    .flatMap((r) => (r.status === 'fulfilled' ? r.value : []))
+    .filter((e) => {
+      if (seen.has(e.id)) return false;
+      seen.add(e.id);
+      return true;
+    });
+}
 export async function fetchGamesForMonth(
   sport: Sport,
   year: number,
@@ -244,7 +302,9 @@ export async function fetchGamesForMonth(
         return true;
       });
   }
-
+  if (sport === 'mlb' || sport === 'nhl' || sport === 'nba') {
+    return fetchLeagueByWeek(sport, year, month);
+  }
   if (sport === 'ncaafb' || sport === 'ncaamb') {
     const extraParams = EXTRA_PARAMS[sport] ?? {};
     const saturdays: Date[] = [];
