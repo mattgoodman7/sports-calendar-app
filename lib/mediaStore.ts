@@ -1,4 +1,4 @@
-import * as SecureStore from 'expo-secure-store';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { MediaType } from './tmdb';
@@ -133,12 +133,6 @@ interface MediaState {
   >>) => void;
 }
 
-const secureStorage = {
-  getItem: async (name: string) => await SecureStore.getItemAsync(name),
-  setItem: async (name: string, value: string) => await SecureStore.setItemAsync(name, value),
-  removeItem: async (name: string) => await SecureStore.deleteItemAsync(name),
-};
-
 export const useMediaStore = create<MediaState>()(
   persist(
     (set) => ({
@@ -220,7 +214,7 @@ export const useMediaStore = create<MediaState>()(
     }),
     {
       name: 'media-calendar-storage',
-      storage: createJSONStorage(() => secureStorage),
+      storage: createJSONStorage(() => AsyncStorage),
     }
   )
 );

@@ -76,9 +76,9 @@ function SearchBar({
 // ─── Search Result Item ───────────────────────────────────────────────────────
 
 function SearchResultItem({
-  item, isTracked, onAdd,
+  item, isTracked, onAdd, disabled,
 }: {
-  item: SearchResult; isTracked: boolean; onAdd: () => void;
+  item: SearchResult; isTracked: boolean; onAdd: () => void; disabled?: boolean;
 }) {
   const year   = item.releaseDate?.slice(0, 4) ?? item.firstAirDate?.slice(0, 4) ?? '';
   const poster = posterUrl(item.posterPath, 'w185');
@@ -104,7 +104,7 @@ function SearchResultItem({
       <TouchableOpacity
         style={[styles.addBtn, isTracked && styles.addBtnTracked]}
         onPress={onAdd}
-        disabled={isTracked}
+        disabled={isTracked || disabled}
       >
         <Text style={[styles.addBtnText, isTracked && styles.addBtnTextTracked]}>
           {isTracked ? '✓' : '+'}
@@ -696,23 +696,28 @@ function TvTab() {
 
   const tvResults = (searchResults ?? []).filter(r => r.mediaType === 'tv');
 
-  const handleAdd = useCallback(async (item: SearchResult) => {
-    if (trackedShows[item.id]) return;
-    const detail = await fetchTvDetail(item.id);
-    addShow({
-      id: item.id, type: 'tv', name: item.title,
-      posterPath: item.posterPath, firstAirDate: item.firstAirDate,
-      status: detail?.status ?? '', totalSeasons: detail?.numberOfSeasons ?? 0,
-      totalEpisodes: detail?.numberOfEpisodes ?? 0,
-      streamingProviders: detail?.streamingProviders ?? [],
-      nextEpisodeAirDate: detail?.nextEpisodeToAir?.airDate ?? null,
-      nextEpisodeName: detail?.nextEpisodeToAir?.name ?? null,
-      nextEpisodeSeason: detail?.nextEpisodeToAir?.seasonNumber ?? null,
-      nextEpisodeNumber: detail?.nextEpisodeToAir?.episodeNumber ?? null,
-      watchedEpisodes: {}, categoryOverride: null,
-      addedAt: new Date().toISOString(),
-    });
-  }, [trackedShows, addShow]);
+const [adding, setAdding] = useState<number | null>(null);
+
+const handleAdd = useCallback(async (item: SearchResult) => {
+  if (adding === item.id) return;
+  if (trackedShows[item.id]) return;
+  setAdding(item.id);
+  const detail = await fetchTvDetail(item.id);
+  addShow({
+    id: item.id, type: 'tv', name: item.title,
+    posterPath: item.posterPath, firstAirDate: item.firstAirDate,
+    status: detail?.status ?? '', totalSeasons: detail?.numberOfSeasons ?? 0,
+    totalEpisodes: detail?.numberOfEpisodes ?? 0,
+    streamingProviders: detail?.streamingProviders ?? [],
+    nextEpisodeAirDate: detail?.nextEpisodeToAir?.airDate ?? null,
+    nextEpisodeName: detail?.nextEpisodeToAir?.name ?? null,
+    nextEpisodeSeason: detail?.nextEpisodeToAir?.seasonNumber ?? null,
+    nextEpisodeNumber: detail?.nextEpisodeToAir?.episodeNumber ?? null,
+    watchedEpisodes: {}, categoryOverride: null,
+    addedAt: new Date().toISOString(),
+  });
+  setAdding(null);
+}, [trackedShows, addShow, adding]);
 
   const shows = Object.values(trackedShows).sort((a, b) => b.addedAt.localeCompare(a.addedAt));
   const caughtUp  = shows.filter(s => getTvCategory(s) === 'caught_up');
@@ -739,6 +744,7 @@ function TvTab() {
                   item={item}
                   isTracked={!!trackedShows[item.id]}
                   onAdd={() => handleAdd(item)}
+                  disabled={adding === item.id}
                 />
               )}
             />
@@ -798,17 +804,22 @@ function MoviesTab() {
 
   const movieResults = (searchResults ?? []).filter(r => r.mediaType === 'movie');
 
-  const handleAdd = useCallback(async (item: SearchResult) => {
-    if (trackedMovies[item.id]) return;
-    const detail = await fetchMovieDetail(item.id);
-    addMovie({
-      id: item.id, type: 'movie', title: item.title,
-      posterPath: item.posterPath, releaseDate: item.releaseDate,
-      streamingDate: null, streamingProviders: detail?.streamingProviders ?? [],
-      watched: false, categoryOverride: null,
-      addedAt: new Date().toISOString(),
-    });
-  }, [trackedMovies, addMovie]);
+const [adding, setAdding] = useState<number | null>(null);
+
+const handleAdd = useCallback(async (item: SearchResult) => {
+  if (adding === item.id) return;
+  if (trackedMovies[item.id]) return;
+  setAdding(item.id);
+  const detail = await fetchMovieDetail(item.id);
+  addMovie({
+    id: item.id, type: 'movie', title: item.title,
+    posterPath: item.posterPath, releaseDate: item.releaseDate,
+    streamingDate: null, streamingProviders: detail?.streamingProviders ?? [],
+    watched: false, categoryOverride: null,
+    addedAt: new Date().toISOString(),
+  });
+  setAdding(null);
+}, [trackedMovies, addMovie, adding]);
 
   const movies  = Object.values(trackedMovies).sort((a, b) => b.addedAt.localeCompare(a.addedAt));
   const watched  = movies.filter(m => getMovieCategory(m) === 'watched');
@@ -834,6 +845,7 @@ function MoviesTab() {
                   item={item}
                   isTracked={!!trackedMovies[item.id]}
                   onAdd={() => handleAdd(item)}
+                  disabled={adding === item.id}
                 />
               )}
             />

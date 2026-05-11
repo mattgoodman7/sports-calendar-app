@@ -296,8 +296,7 @@ export default function MediaCalendarScreen() {
             <View key={type} style={styles.legendItem}>
               <View style={[styles.legendDot, { backgroundColor: eventColor(type) }]} />
               <Text style={styles.legendLabel}>
-                {type === 'theater' ? 'In Theaters' : type === 'streaming' ? 'Streaming' : 'Episode'}
-              </Text>
+                {type === 'theater' ? '🎭 In Theaters' : type === 'streaming' ? '🎬 Streaming Release' : '📺 New Episode'}              </Text>
             </View>
           ))}
         </View>
@@ -384,7 +383,7 @@ const styles = StyleSheet.create({
   loadingRow:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 4 },
   loadingText: { fontSize: 13, color: '#666' },
 
-  legend:      { flexDirection: 'row', paddingHorizontal: 16, gap: 16, marginBottom: 8 },
+  legend:      { flexDirection: 'row', paddingHorizontal: 6, gap: 0, marginBottom: 8 },
   legendItem:  { flexDirection: 'row', alignItems: 'center', gap: 5 },
   legendDot:   { width: 8, height: 8, borderRadius: 4 },
   legendLabel: { fontSize: 11, color: '#666' },
@@ -396,7 +395,7 @@ const styles = StyleSheet.create({
   cell:         { width: '14.28%', padding: 2, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#1a1a1a' },
   cellSelected: { backgroundColor: '#1a1a2e' },
   dayNum:       { width: 22, height: 22, alignItems: 'center', justifyContent: 'center', marginBottom: 2 },
-  dayNumToday:  { backgroundColor: PURPLE, borderRadius: 11 },
+  dayNumToday:  { backgroundColor: '#378ADD', borderRadius: 11 },
   dayNumText:   { fontSize: 12, fontWeight: '500', color: '#888' },
   pill:         { borderRadius: 3, paddingHorizontal: 3, paddingVertical: 1, marginBottom: 2 },
   pillText:     { fontSize: 8, color: '#fff' },
