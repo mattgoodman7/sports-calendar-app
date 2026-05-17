@@ -12,8 +12,8 @@ export interface StreamingProviderInfo {
   type: 'flatrate' | 'rent' | 'buy' | 'free';
 }
 
-export type TvCategory = 'caught_up' | 'currently_watching' | 'wishlist';
-export type MovieCategory = 'watched' | 'wishlist';
+export type TvCategory = 'caught_up' | 'currently_watching' | 'wishlist' | 'finished' | 'ditched';
+export type MovieCategory = 'watched' | 'wishlist' | 'upcoming';
 
 export interface TrackedMovie {
   id: number;
@@ -24,7 +24,6 @@ export interface TrackedMovie {
   streamingDate: string | null;
   streamingProviders: StreamingProviderInfo[];
   watched: boolean;
-  categoryOverride: MovieCategory | null; // null = use auto
   addedAt: string;
 }
 
@@ -42,12 +41,19 @@ export interface TrackedShow {
   nextEpisodeName: string | null;
   nextEpisodeSeason: number | null;
   nextEpisodeNumber: number | null;
-  watchedEpisodes: Record<string, boolean>; // "S1E3" → true
-  categoryOverride: TvCategory | null;      // null = use auto
+  currentSeasonNumber: number;
+  currentSeasonEpisodes: number;
+  currentSeasonAiredEpisodes: number;
+  watchedEpisodes: Record<string, boolean>;
+  categoryOverride: TvCategory | null;
   addedAt: string;
+  lastRefreshedAt: string | null;
 }
 
 export type TrackedMedia = TrackedMovie | TrackedShow;
+
+// TMDB status strings that mean a show is permanently over
+const FINISHED_STATUSES = new Set(['Ended', 'Canceled', 'Cancelled']);
 
 // ─── Categorization logic ─────────────────────────────────────────────────────
 
@@ -55,61 +61,44 @@ export function getTvCategory(show: TrackedShow): TvCategory {
   if (show.categoryOverride) return show.categoryOverride;
 
   const watchedCount = getWatchedCount(show);
-
   if (watchedCount === 0) return 'wishlist';
 
-  // Find the most recently aired season number
-  // We use totalSeasons as a proxy — the highest season is the most recent
   const latestSeason = show.totalSeasons;
   if (latestSeason === 0) return 'wishlist';
 
-  // Check if user has watched any episode from the latest season
   const hasWatchedLatestSeason = Object.keys(show.watchedEpisodes).some(key => {
     const match = key.match(/^S(\d+)E\d+$/);
-    return match && parseInt(match[1], 10) === latestSeason;
+    if (!match) return false;
+    const s = parseInt(match[1], 10);
+    return s >= 1 && s <= (show.currentSeasonNumber || latestSeason);
   });
 
   if (!hasWatchedLatestSeason) return 'wishlist';
 
-  // They've watched something from the latest season —
-  // now check if they're fully caught up on all aired episodes.
-  // We use nextEpisodeAirDate as a signal: if there's a next episode
-  // and they haven't watched through it yet, they're "currently watching".
-  // If no next episode (show ended or season gap), check if progress is 100%.
   if (show.nextEpisodeAirDate) {
-    // Show is still airing — are they caught up to the very latest?
-    // "Caught up" means watched everything up to but not including the next episode
-    const nextSeason = show.nextEpisodeSeason ?? latestSeason;
-    const nextEp     = show.nextEpisodeNumber ?? 999;
-
-    // Count watched episodes in latest season up to (but not including) next ep
-    const watchedUpToNext = Object.keys(show.watchedEpisodes).filter(key => {
-      const match = key.match(/^S(\d+)E(\d+)$/);
-      if (!match) return false;
-      const s = parseInt(match[1], 10);
-      const e = parseInt(match[2], 10);
-      // Earlier seasons all watched, or current season up to next ep
-      return s < nextSeason || (s === nextSeason && e < nextEp);
-    }).length;
-
-    // Total episodes that should be watched to be "caught up"
-    // = all episodes before the next one to air
-    // We estimate: totalEpisodes - remaining unaired
-    // Simple heuristic: if they've watched everything aired, they're caught up
-    const totalAired = show.totalEpisodes - 1; // at least 1 unaired (the next one)
+    const totalAired = show.totalEpisodes - 1;
     const isCaughtUp = watchedCount >= totalAired;
-
     return isCaughtUp ? 'caught_up' : 'currently_watching';
   } else {
-    // No next episode — show may be on hiatus or ended
-    // If they've watched all episodes, caught up; otherwise currently watching
-    return watchedCount >= show.totalEpisodes ? 'caught_up' : 'currently_watching';
+    const unairedInCurrentSeason = Math.max(
+      0,
+      (show.currentSeasonEpisodes ?? 0) - (show.currentSeasonAiredEpisodes ?? 0)
+    );
+    const totalAired = show.totalEpisodes - unairedInCurrentSeason;
+    const isCaughtUp = watchedCount >= totalAired;
+    if (!isCaughtUp) return 'currently_watching';
+    return FINISHED_STATUSES.has(show.status) ? 'finished' : 'caught_up';
   }
 }
 
 export function getMovieCategory(movie: TrackedMovie): MovieCategory {
-  if (movie.categoryOverride) return movie.categoryOverride;
-  return movie.watched ? 'watched' : 'wishlist';
+  if (movie.watched) return 'watched';
+  if (movie.releaseDate) {
+    const release = new Date(movie.releaseDate);
+    release.setHours(23, 59, 59, 999);
+    if (release > new Date()) return 'upcoming';
+  }
+  return 'wishlist';
 }
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -118,18 +107,35 @@ interface MediaState {
   trackedMovies: Record<number, TrackedMovie>;
   trackedShows: Record<number, TrackedShow>;
 
+  // Drag order: maps category → ordered array of IDs
+  // IDs not present in order array fall to the end in addedAt order
+  tvCategoryOrder: Record<string, number[]>;
+  movieCategoryOrder: Record<string, number[]>;
+
   addMovie: (movie: TrackedMovie) => void;
   removeMovie: (id: number) => void;
   toggleMovieWatched: (id: number) => void;
-  setMovieCategoryOverride: (id: number, category: MovieCategory | null) => void;
+  setMovieCategoryOrder: (category: string, orderedIds: number[]) => void;
 
   addShow: (show: TrackedShow) => void;
   removeShow: (id: number) => void;
   markEpisodeWatched: (showId: number, seasonNumber: number, episodeNumber: number, watched: boolean) => void;
   markSeasonWatched: (showId: number, seasonNumber: number, episodeCount: number, watched: boolean) => void;
   setShowCategoryOverride: (id: number, category: TvCategory | null) => void;
-  updateShowNextEpisode: (showId: number, updates: Partial<Pick<TrackedShow,
-    'nextEpisodeAirDate' | 'nextEpisodeName' | 'nextEpisodeSeason' | 'nextEpisodeNumber'
+  setTvCategoryOrder: (category: string, orderedIds: number[]) => void;
+  refreshShow: (showId: number, updates: Partial<Pick<TrackedShow,
+    | 'status'
+    | 'totalSeasons'
+    | 'totalEpisodes'
+    | 'streamingProviders'
+    | 'nextEpisodeAirDate'
+    | 'nextEpisodeName'
+    | 'nextEpisodeSeason'
+    | 'nextEpisodeNumber'
+    | 'currentSeasonNumber'
+    | 'currentSeasonEpisodes'
+    | 'currentSeasonAiredEpisodes'
+    | 'lastRefreshedAt'
   >>) => void;
 }
 
@@ -138,6 +144,8 @@ export const useMediaStore = create<MediaState>()(
     (set) => ({
       trackedMovies: {},
       trackedShows: {},
+      tvCategoryOrder: {},
+      movieCategoryOrder: {},
 
       addMovie: (movie) =>
         set((state) => ({ trackedMovies: { ...state.trackedMovies, [movie.id]: movie } })),
@@ -145,7 +153,11 @@ export const useMediaStore = create<MediaState>()(
       removeMovie: (id) =>
         set((state) => {
           const { [id]: _, ...rest } = state.trackedMovies;
-          return { trackedMovies: rest };
+          // Remove from all category orders
+          const movieCategoryOrder = Object.fromEntries(
+            Object.entries(state.movieCategoryOrder).map(([cat, ids]) => [cat, ids.filter(i => i !== id)])
+          );
+          return { trackedMovies: rest, movieCategoryOrder };
         }),
 
       toggleMovieWatched: (id) =>
@@ -156,12 +168,10 @@ export const useMediaStore = create<MediaState>()(
           },
         })),
 
-      setMovieCategoryOverride: (id, category) =>
+
+      setMovieCategoryOrder: (category, orderedIds) =>
         set((state) => ({
-          trackedMovies: {
-            ...state.trackedMovies,
-            [id]: { ...state.trackedMovies[id], categoryOverride: category },
-          },
+          movieCategoryOrder: { ...state.movieCategoryOrder, [category]: orderedIds },
         })),
 
       addShow: (show) =>
@@ -170,7 +180,11 @@ export const useMediaStore = create<MediaState>()(
       removeShow: (id) =>
         set((state) => {
           const { [id]: _, ...rest } = state.trackedShows;
-          return { trackedShows: rest };
+          // Remove from all category orders
+          const tvCategoryOrder = Object.fromEntries(
+            Object.entries(state.tvCategoryOrder).map(([cat, ids]) => [cat, ids.filter(i => i !== id)])
+          );
+          return { trackedShows: rest, tvCategoryOrder };
         }),
 
       markEpisodeWatched: (showId, seasonNumber, episodeNumber, watched) =>
@@ -205,7 +219,12 @@ export const useMediaStore = create<MediaState>()(
           },
         })),
 
-      updateShowNextEpisode: (showId, updates) =>
+      setTvCategoryOrder: (category, orderedIds) =>
+        set((state) => ({
+          tvCategoryOrder: { ...state.tvCategoryOrder, [category]: orderedIds },
+        })),
+
+      refreshShow: (showId, updates) =>
         set((state) => {
           const show = state.trackedShows[showId];
           if (!show) return state;
@@ -238,5 +257,63 @@ export function isSeasonWatched(show: TrackedShow, seasonNumber: number, episode
   for (let ep = 1; ep <= episodeCount; ep++) {
     if (!show.watchedEpisodes[`S${seasonNumber}E${ep}`]) return false;
   }
+  return true;
+}
+
+// ─── Current season helpers ───────────────────────────────────────────────────
+
+export function getCurrentSeasonWatchedCount(show: TrackedShow): number {
+  const s = show.currentSeasonNumber;
+  if (!s) return 0;
+  return Object.keys(show.watchedEpisodes).filter(key => {
+    const match = key.match(/^S(\d+)E\d+$/);
+    return match && parseInt(match[1], 10) === s;
+  }).length;
+}
+
+export function getCurrentSeasonWatchedPercent(show: TrackedShow): number {
+  if (!show.currentSeasonEpisodes) return 0;
+  return Math.round((getCurrentSeasonWatchedCount(show) / show.currentSeasonEpisodes) * 100);
+}
+
+export function getCurrentSeasonAiredPercent(show: TrackedShow): number {
+  if (!show.currentSeasonEpisodes) return 0;
+  return Math.round((show.currentSeasonAiredEpisodes / show.currentSeasonEpisodes) * 100);
+}
+
+// ─── Ordering helper ──────────────────────────────────────────────────────────
+// Given a list of items and a stored order (array of IDs), returns items
+// sorted by the stored order. Items not in the order array appear at the end
+// in their natural (addedAt) order.
+
+export function applyOrder<T extends { id: number }>(items: T[], order: number[]): T[] {
+  const orderMap = new Map(order.map((id, i) => [id, i]));
+  return [...items].sort((a, b) => {
+    const ai = orderMap.has(a.id) ? orderMap.get(a.id)! : Infinity;
+    const bi = orderMap.has(b.id) ? orderMap.get(b.id)! : Infinity;
+    return ai - bi;
+  });
+}
+
+// ─── Refresh eligibility ──────────────────────────────────────────────────────
+
+const REFRESH_STALE_HOURS = 24;
+const REFRESH_LOOKAHEAD_DAYS = 7;
+
+export function shouldRefreshShow(show: TrackedShow): boolean {
+  if (FINISHED_STATUSES.has(show.status)) return false;
+
+  const now = new Date();
+
+  if (show.lastRefreshedAt) {
+    const hoursSince = (now.getTime() - new Date(show.lastRefreshedAt).getTime()) / (1000 * 60 * 60);
+    if (hoursSince < REFRESH_STALE_HOURS) return false;
+  }
+
+  if (show.nextEpisodeAirDate) {
+    const daysUntil = (new Date(show.nextEpisodeAirDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+    return daysUntil <= REFRESH_LOOKAHEAD_DAYS;
+  }
+
   return true;
 }
